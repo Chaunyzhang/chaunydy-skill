@@ -150,3 +150,17 @@ class DouyinAPIClient:
         if data:
             return data.get("aweme_detail")
         return None
+
+    async def get_comments(self, aweme_id: str, cursor: int = 0, count: int = 10) -> Dict[str, Any]:
+        params = await self._default_query()
+        params.update(
+            {
+                "aweme_id": aweme_id,
+                "cursor": cursor,
+                "count": count,
+                "item_type": 0,
+                "insert_ids": "",
+                "rcFT": "",
+            }
+        )
+        return await self._request_json("/aweme/v1/web/comment/list/", params)

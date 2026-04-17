@@ -5,6 +5,8 @@ A self-contained read-mostly Douyin skill for:
 - metadata
 - format listing
 - audio/video download
+- comments
+- like / favorite state inspection
 - optional DashScope transcription
 
 Primary stable route:
@@ -63,6 +65,18 @@ python scripts/dy_download.py "<douyin_share_url>"
 python scripts/dy_download.py "<douyin_share_url>" --audio-only
 python scripts/dy_download.py "<douyin_share_url>" --browser chrome
 python scripts/dy_download.py "<douyin_share_url>" --cookie-file "D:/path/to/cookies.txt"
+```
+
+### Comments
+
+```bash
+python scripts/dy_comments.py "<douyin_share_url>" --count 10
+```
+
+### Reaction state
+
+```bash
+python scripts/dy_reactions.py "<douyin_share_url>"
 ```
 
 ### Transcription

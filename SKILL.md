@@ -37,7 +37,19 @@ python scripts/dy_download.py "<douyin_share_url>"
 python scripts/dy_download.py "<douyin_share_url>" --audio-only
 ```
 
-## Workflow C: transcription
+## Workflow C: comments
+
+```bash
+python scripts/dy_comments.py "<douyin_share_url>" --count 10
+```
+
+## Workflow D: reaction state
+
+```bash
+python scripts/dy_reactions.py "<douyin_share_url>"
+```
+
+## Workflow E: transcription
 
 ```bash
 python scripts/dy_transcribe.py "<local_or_remote_media_source>"

@@ -52,11 +52,11 @@ def to_netscape(cookies: list[dict]) -> str:
 
 def looks_logged_in(cookies: list[dict]) -> bool:
     names = {cookie.get("name", "") for cookie in cookies}
-    domains = " ".join(cookie.get("domain", "") for cookie in cookies)
-    return (
-        any(name in names for name in ["sessionid", "sid_tt", "passport_csrf_token"])
-        or "douyin.com" in domains
-    )
+    required = {"passport_csrf_token", "passport_csrf_token_default", "ttwid"}
+    if not required.issubset(names):
+        return False
+    # One of these usually indicates an authenticated or at least usable session state.
+    return any(name in names for name in ["odin_tt", "sid_guard", "sessionid_ss", "uid_tt", "sid_tt"])
 
 
 def main() -> int:
