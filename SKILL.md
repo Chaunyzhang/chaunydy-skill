@@ -23,6 +23,8 @@ If Douyin requires fresh cookies, run:
 python scripts/dy_login.py
 ```
 
+If user interaction is required, stop and wait for the user to finish login in the opened dedicated Douyin window.
+
 ## Workflow A: metadata
 
 ```bash

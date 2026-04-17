@@ -47,7 +47,7 @@ ffmpeg
 python scripts/dy_login.py
 ```
 
-This opens a browser window and exports both `cookies.json` and `cookies.txt` after you log in.
+This opens the dedicated Douyin login session and exports both `cookies.json` and `cookies.txt` after you log in.
 
 ### Metadata
 
