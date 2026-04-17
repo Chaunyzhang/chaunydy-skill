@@ -13,6 +13,13 @@ Main blocks:
 3. media download
 4. transcription
 
+Current preferred runtime path:
+
+1. log in through `dy_login.py`
+2. reuse the exported browser cookies
+3. parse `RENDER_DATA` from a real page session
+4. extract direct media URLs from rendered page data
+
 ## 2. First command
 
 Always run:
@@ -25,6 +32,7 @@ python scripts/dy_status.py --json
 
 ```bash
 python -m pip install -r requirements.txt
+python -m playwright install chromium
 ```
 
 Optional:
@@ -65,7 +73,21 @@ If you see an error like:
 Fresh cookies (not necessarily logged in) are needed
 ```
 
-do this:
+preferred fix:
+
+```bash
+python scripts/dy_login.py
+```
+
+What this does:
+
+1. opens a persistent browser
+2. lets the user log in manually
+3. exports cookies into:
+   - `~/.local/share/chaunydy-skill/cookies.json`
+   - `~/.local/share/chaunydy-skill/cookies.txt`
+
+If that path still needs manual override, then do this:
 
 1. open Douyin in a real browser
 2. refresh the page normally
@@ -77,6 +99,13 @@ python scripts/dy_download.py "<douyin_share_url>" --browser chrome
 ```
 
 If Chrome is not your active browser, try `edge`.
+
+If browser-cookie loading fails on Windows because of DPAPI decryption, use a manual cookie file instead:
+
+```bash
+python scripts/dy_info.py "<douyin_share_url>" --cookie-file "D:/path/to/cookies.txt"
+python scripts/dy_download.py "<douyin_share_url>" --cookie-file "D:/path/to/cookies.txt"
+```
 
 Success means:
 

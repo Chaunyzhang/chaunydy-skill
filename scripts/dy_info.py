@@ -12,12 +12,13 @@ def main() -> None:
     parser.add_argument("url")
     parser.add_argument("--formats", action="store_true")
     parser.add_argument("--browser", default="", help="Optional browser cookie source, e.g. chrome or edge")
+    parser.add_argument("--cookie-file", default="", help="Optional Netscape cookies.txt path")
     args = parser.parse_args()
 
     if args.formats:
-        result = list_formats(args.url, browser_cookie_source=args.browser or None)
+        result = list_formats(args.url, browser_cookie_source=args.browser or None, cookie_file=args.cookie_file or None)
     else:
-        info = extract_info(args.url, browser_cookie_source=args.browser or None)
+        info = extract_info(args.url, browser_cookie_source=args.browser or None, cookie_file=args.cookie_file or None)
         result = {"success": True, "source_url": args.url, "info": normalize_info(info)}
 
     print(json.dumps(result, ensure_ascii=False, indent=2))

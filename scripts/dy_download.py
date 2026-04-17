@@ -14,9 +14,16 @@ def main() -> None:
     parser.add_argument("--output-dir", default=str(Path.cwd() / "out"))
     parser.add_argument("--audio-only", action="store_true")
     parser.add_argument("--browser", default="", help="Optional browser cookie source, e.g. chrome or edge")
+    parser.add_argument("--cookie-file", default="", help="Optional Netscape cookies.txt path")
     args = parser.parse_args()
 
-    result = download_media(args.url, output_dir=args.output_dir, audio_only=args.audio_only, browser_cookie_source=args.browser or None)
+    result = download_media(
+        args.url,
+        output_dir=args.output_dir,
+        audio_only=args.audio_only,
+        browser_cookie_source=args.browser or None,
+        cookie_file=args.cookie_file or None,
+    )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     raise SystemExit(0 if result.get("success") else 1)
 

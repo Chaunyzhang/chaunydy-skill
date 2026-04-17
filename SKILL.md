@@ -17,6 +17,12 @@ Always check status first:
 python scripts/dy_status.py --json
 ```
 
+If Douyin requires fresh cookies, run:
+
+```bash
+python scripts/dy_login.py
+```
+
 ## Workflow A: metadata
 
 ```bash

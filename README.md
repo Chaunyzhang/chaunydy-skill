@@ -7,6 +7,12 @@ A self-contained read-mostly Douyin skill for:
 - audio/video download
 - optional DashScope transcription
 
+Primary stable route:
+
+- real browser login session
+- page `RENDER_DATA` extraction
+- direct media URL download from rendered data
+
 ## Safety default
 
 This repo is read-mostly by default.
@@ -22,6 +28,7 @@ python scripts/dy_status.py --json
 
 ```bash
 python -m pip install -r requirements.txt
+python -m playwright install chromium
 ```
 
 Optional:
@@ -32,12 +39,21 @@ ffmpeg
 
 ## Workflows
 
+### Login and cookie export
+
+```bash
+python scripts/dy_login.py
+```
+
+This opens a browser window and exports both `cookies.json` and `cookies.txt` after you log in.
+
 ### Metadata
 
 ```bash
 python scripts/dy_info.py "<douyin_share_url>"
 python scripts/dy_info.py "<douyin_share_url>" --formats
 python scripts/dy_info.py "<douyin_share_url>" --browser chrome
+python scripts/dy_info.py "<douyin_share_url>" --cookie-file "D:/path/to/cookies.txt"
 ```
 
 ### Download
@@ -46,6 +62,7 @@ python scripts/dy_info.py "<douyin_share_url>" --browser chrome
 python scripts/dy_download.py "<douyin_share_url>"
 python scripts/dy_download.py "<douyin_share_url>" --audio-only
 python scripts/dy_download.py "<douyin_share_url>" --browser chrome
+python scripts/dy_download.py "<douyin_share_url>" --cookie-file "D:/path/to/cookies.txt"
 ```
 
 ### Transcription
