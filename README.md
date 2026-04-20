@@ -68,6 +68,12 @@ Important:
 - cookie presence alone does not automatically skip login anymore
 - the prepare flow first tries to confirm that the dedicated browser profile can actually access a logged-in page
 - if that confirmation fails, it will force the visible login stage before continuing
+- search verification is now split out into a separate explicit step:
+
+```bash
+python scripts/dy_search_verify.py
+python scripts/dy_prepare.py
+```
 
 ## Install
 

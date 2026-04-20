@@ -150,8 +150,14 @@ Important:
 - normal probes should stay headless and quiet
 - only true human-action stages should open a visible browser window
 - cookie presence alone is not enough to skip login; the dedicated browser login state must be confirmed first
-- if search hits `verify_check`, `dy_prepare.py` should open the dedicated search page and wait for the human to finish verification before retrying the search probe
-- the verification window must not close merely because the page title or URL no longer looks like a captcha page; it should close only after a real search-readiness probe succeeds
+- if search hits `verify_check`, `dy_prepare.py` should stop and tell the operator to run a separate human-verification step:
+
+```bash
+python scripts/dy_search_verify.py
+python scripts/dy_prepare.py
+```
+
+- keep the long-lived visible browser window in `dy_search_verify.py`, not inside the main prepare pass
 
 ## 6. Preferred runtime path
 

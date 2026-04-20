@@ -4,12 +4,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import time
 from pathlib import Path
 from typing import Any, Dict
-from urllib.parse import quote
 
-from browser_prep import select_login_browser
 from dy_comments import fetch_comments
 from dy_core import (
     PREP_PROBE_SEARCH_KEYWORD,
@@ -26,7 +23,6 @@ from dy_core import (
 from dy_impl.api_client import DouyinAPIClient
 from dy_login import login_and_export_cookies
 from dy_reactions import read_reaction_state
-from playwright.sync_api import sync_playwright
 from prepare_state import default_prepare_state, set_capability, set_phase, write_prepare_state
 
 
@@ -97,109 +93,9 @@ async def probe_search_readiness(keyword: str) -> Dict[str, Any]:
     }
 
 
-def run_async_probe(coro: Any) -> Any:
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
-def page_needs_search_verification(page: Any) -> Dict[str, Any]:
-    try:
-        title = page.title()
-    except Exception:
-        title = ""
-    current_url = getattr(page, "url", "")
-    verification_active = ("验证码" in title) or ("verify" in current_url.lower())
-    return {
-        "verification_active": verification_active,
-        "current_url": current_url,
-        "page_title": title,
-    }
-
-
-def assist_search_verification(requested_browser: str, keyword: str, timeout_seconds: int = 300) -> Dict[str, Any]:
-    launch_plan = select_login_browser(PROFILE_ROOT, USER_DATA_DIR, requested_browser=requested_browser)
-    search_url = f"https://www.douyin.com/search/{quote(keyword)}?type=video"
-    print("Search verification is required. Opening the dedicated browser search page now.")
-    print("Please complete any captcha / human verification in the visible dedicated browser window.")
-    print("Do not close the window until the script tells you the search verification passed or timed out.")
-    deadline = time.time() + max(timeout_seconds, 30)
-    with sync_playwright() as p:
-        launch_kwargs = {
-            "user_data_dir": launch_plan["user_data_dir"],
-            "headless": False,
-        }
-        if launch_plan.get("playwright_channel"):
-            launch_kwargs["channel"] = launch_plan["playwright_channel"]
-        context = p.chromium.launch_persistent_context(**launch_kwargs)
-        page = context.new_page()
-        try:
-            page.goto(search_url, wait_until="domcontentloaded", timeout=120000)
-            page.wait_for_timeout(3000)
-            print(
-                json.dumps(
-                    {
-                        "success": True,
-                        "window_ready": True,
-                        "verification_type": "search_verify_check",
-                        "selected_browser": launch_plan["selected_browser"],
-                        "user_data_dir": launch_plan["user_data_dir"],
-                        "current_url": page.url,
-                        "page_title": page.title(),
-                        "human_action_required": "Complete the search verification in this dedicated browser window, then wait. The script will recheck automatically.",
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-            last_probe: Dict[str, Any] | None = None
-            while time.time() < deadline:
-                page.wait_for_timeout(5000)
-                page_state = page_needs_search_verification(page)
-                if not page_state["verification_active"]:
-                    print("Verification page no longer looks blocked. Rechecking real search readiness now.")
-                    last_probe = run_async_probe(probe_search_readiness(keyword))
-                    if last_probe.get("success"):
-                        print("Search readiness probe succeeded. You can close the browser window now.")
-                        return {
-                            "success": True,
-                            "selected_browser": launch_plan["selected_browser"],
-                            "user_data_dir": launch_plan["user_data_dir"],
-                            "verification_url": search_url,
-                            "page_state": page_state,
-                            "search_probe": last_probe,
-                        }
-                    print(
-                        json.dumps(
-                            {
-                                "success": False,
-                                "verification_stage": "post-captcha-recheck",
-                                "page_state": page_state,
-                                "search_probe": last_probe,
-                                "message": "The page looks past the captcha, but search is still not ready. Keep the dedicated browser open and finish any remaining verification or page settlement.",
-                            },
-                            ensure_ascii=False,
-                            indent=2,
-                        )
-                    )
-            return {
-                "success": False,
-                "selected_browser": launch_plan["selected_browser"],
-                "user_data_dir": launch_plan["user_data_dir"],
-                "verification_url": search_url,
-                "message": "Timed out waiting for search verification to pass in the dedicated browser.",
-                "last_search_probe": last_probe,
-            }
-        finally:
-            context.close()
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare dedicated browser state and verify read-only Douyin workflow readiness.")
     parser.add_argument("--browser", default="auto", help="Preferred dedicated browser: auto, chrome, edge, chromium")
-    parser.add_argument("--timeout-seconds", type=int, default=300)
     parser.add_argument("--force-login", action="store_true", help="Force an interactive login even if cookies already look usable")
     args = parser.parse_args()
 
@@ -227,7 +123,7 @@ def main() -> int:
     write_prepare_state(PREP_STATE, state)
 
     if args.force_login or snapshot.get("needs_login") or not login_confirmed:
-        login_result = login_and_export_cookies(requested_browser=args.browser, timeout_seconds=args.timeout_seconds, emit_progress=True)
+        login_result = login_and_export_cookies(requested_browser=args.browser, timeout_seconds=300, emit_progress=True)
         if not login_result.get("success"):
             set_phase(state, "login", "failed", login_result)
             blockers.append(login_result.get("message") or "login failed")
@@ -303,11 +199,6 @@ def main() -> int:
     write_prepare_state(PREP_STATE, state)
 
     search_result = asyncio.run(probe_search_readiness(PREP_PROBE_SEARCH_KEYWORD))
-    if search_result.get("verify_needed"):
-        verification_result = assist_search_verification(args.browser, PREP_PROBE_SEARCH_KEYWORD, timeout_seconds=args.timeout_seconds)
-        set_phase(state, "search_verify", "ready" if verification_result.get("success") else "failed", verification_result)
-        write_prepare_state(PREP_STATE, state)
-        search_result = asyncio.run(probe_search_readiness(PREP_PROBE_SEARCH_KEYWORD))
     search_ready = bool(search_result.get("success"))
     set_phase(state, "search_probe", "ready" if search_ready else "failed", search_result)
     set_capability(
@@ -317,6 +208,20 @@ def main() -> int:
         search_result.get("message") or ("Search probe succeeded." if search_ready else "Search probe failed."),
         {"probe_keyword": PREP_PROBE_SEARCH_KEYWORD},
     )
+    if search_result.get("verify_needed"):
+        set_phase(
+            state,
+            "search_verify",
+            "needs_human_action",
+            {
+                "success": False,
+                "verification_type": "search_verify_check",
+                "keyword": PREP_PROBE_SEARCH_KEYWORD,
+                "message": "Search needs human verification in the dedicated browser. Run python scripts/dy_search_verify.py and then rerun python scripts/dy_prepare.py.",
+            },
+        )
+    else:
+        set_phase(state, "search_verify", "ready" if search_ready else "pending", {"message": "No separate search verification step is currently required."})
     write_prepare_state(PREP_STATE, state)
 
     if not metadata_ready:
