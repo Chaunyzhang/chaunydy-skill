@@ -46,6 +46,18 @@ python scripts/dy_info.py "<douyin_share_url>"
 python scripts/dy_info.py "<douyin_share_url>" --formats
 ```
 
+## Workflow A2: keyword search
+
+```bash
+python scripts/dy_search.py "动画" --count 5
+```
+
+Important:
+
+- this is a minimal keyword search entrypoint
+- if Douyin returns `verify_check`, report that honestly
+- do not pretend search is working when the platform is asking for extra verification
+
 ## Workflow B: download
 
 ```bash

@@ -180,6 +180,40 @@ async def extract_info_api(url: str) -> dict[str, Any] | None:
         }
 
 
+async def resolve_aweme_id(url: str) -> str:
+    parsed = URLParser.parse(url)
+    if parsed and parsed.get("aweme_id"):
+        return str(parsed["aweme_id"])
+    cookies = load_cookie_dict()
+    if not cookies:
+        return ""
+    async with DouyinAPIClient(cookies) as client:
+        resolved = url
+        if url.startswith("https://v.douyin.com"):
+            resolved_url = await client.resolve_short_url(url)
+            if resolved_url:
+                resolved = resolved_url
+        parsed = URLParser.parse(resolved)
+        if parsed and parsed.get("aweme_id"):
+            return str(parsed["aweme_id"])
+    return ""
+
+
+async def get_video_detail_via_api(url_or_aweme_id: str) -> dict[str, Any] | None:
+    aweme_id = url_or_aweme_id if str(url_or_aweme_id).isdigit() else await resolve_aweme_id(url_or_aweme_id)
+    if not aweme_id:
+        return None
+    cookies = load_cookie_dict()
+    if not cookies:
+        return None
+    async with DouyinAPIClient(cookies) as client:
+        detail = await client.get_video_detail(str(aweme_id))
+    if not isinstance(detail, dict):
+        return None
+    webpage_url = url_or_aweme_id if "://" in str(url_or_aweme_id) else f"https://www.douyin.com/video/{aweme_id}"
+    return normalize_aweme_detail(detail, source="signed_api", webpage_url=webpage_url)
+
+
 def _find_aweme_candidate(node: Any) -> dict[str, Any] | None:
     if isinstance(node, dict):
         video = node.get("video")
