@@ -235,6 +235,31 @@ Requires:
 DASHSCOPE_API_KEY
 ```
 
+Current supported vendor:
+
+- `DashScope` only
+
+Secret-handling rule:
+
+1. every agent / terminal session must configure its own key separately
+2. never assume another agent already configured it
+3. never print or commit a real key
+4. never expose any team-owned key to the user
+
+Correct setup pattern:
+
+```powershell
+$env:DASHSCOPE_API_KEY="your_own_key"
+```
+
+How weak models should guide the user:
+
+1. say that transcription currently supports **DashScope**
+2. ask the user to create their **own** DashScope / 阿里云百炼 API key
+3. tell the user to set it only in the current session
+4. if the key is missing, stop and report the missing configuration honestly
+5. do not invent fallback credentials
+
 Commands:
 
 ```bash

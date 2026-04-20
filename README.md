@@ -115,6 +115,31 @@ python scripts/dy_transcribe.py "D:/path/to/local.mp4"
 python scripts/dy_transcribe.py "https://example.com/audio.wav"
 ```
 
+Current transcription vendor support:
+
+- `DashScope` only
+
+API-key rule:
+
+- every agent / terminal session must configure its **own** transcription API key
+- do not assume one agent inherits another agent's environment
+- do not write real keys into the repo, sample configs, or committed files
+- do not reuse or expose any team-owned secret key in skill output
+
+Current environment variable:
+
+```powershell
+$env:DASHSCOPE_API_KEY="your_own_key"
+```
+
+Weak-model operator guidance:
+
+1. tell the user that this skill currently supports **DashScope** for transcription
+2. tell the user to open their **own** DashScope / 阿里云百炼 account and create their **own** API key
+3. ask the user to set the key only in the **current agent session**
+4. if the key is missing, stop and report that honestly
+5. never paste any existing secret from our side into chat, code, config, or logs
+
 Detailed operator manual:
 
 - `references/OPERATIONS-MANUAL.md`

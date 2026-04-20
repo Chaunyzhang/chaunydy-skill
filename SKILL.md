@@ -71,9 +71,22 @@ python scripts/dy_reactions.py "<douyin_share_url>"
 python scripts/dy_transcribe.py "<local_or_remote_media_source>"
 ```
 
+Current transcription vendor support:
+
+- `DashScope` only
+
+Critical secret-handling rule:
+
+- the current agent must ask the user to configure **their own** `DASHSCOPE_API_KEY`
+- every agent/session configures its own env var separately
+- do not assume cross-agent inheritance
+- do not expose any existing team key
+- do not write real keys into repo files, examples, or commits
+
 ## Weak-model rules
 
 1. Do not skip `dy_status.py`
 2. Prefer read-only operations
 3. Prefer metadata before download when debugging a broken link
 4. Prefer local media for transcription when possible
+5. If transcription is requested and `DASHSCOPE_API_KEY` is missing, stop and tell the user to open their own DashScope account and configure the key in the current agent session only
