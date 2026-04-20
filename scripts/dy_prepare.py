@@ -94,6 +94,14 @@ async def probe_search_readiness(keyword: str) -> Dict[str, Any]:
     }
 
 
+def run_async_probe(coro: Any) -> Any:
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
 def page_needs_search_verification(page: Any) -> Dict[str, Any]:
     try:
         title = page.title()
@@ -143,29 +151,43 @@ def assist_search_verification(requested_browser: str, keyword: str, timeout_sec
                     indent=2,
                 )
             )
-            stable_non_verify_checks = 0
+            last_probe: Dict[str, Any] | None = None
             while time.time() < deadline:
                 page.wait_for_timeout(5000)
                 page_state = page_needs_search_verification(page)
                 if not page_state["verification_active"]:
-                    stable_non_verify_checks += 1
-                else:
-                    stable_non_verify_checks = 0
-                if stable_non_verify_checks >= 2:
-                    print("Search verification page no longer looks blocked. Rechecking search readiness now.")
-                    return {
-                        "success": True,
-                        "selected_browser": launch_plan["selected_browser"],
-                        "user_data_dir": launch_plan["user_data_dir"],
-                        "verification_url": search_url,
-                        "page_state": page_state,
-                    }
+                    print("Verification page no longer looks blocked. Rechecking real search readiness now.")
+                    last_probe = run_async_probe(probe_search_readiness(keyword))
+                    if last_probe.get("success"):
+                        print("Search readiness probe succeeded. You can close the browser window now.")
+                        return {
+                            "success": True,
+                            "selected_browser": launch_plan["selected_browser"],
+                            "user_data_dir": launch_plan["user_data_dir"],
+                            "verification_url": search_url,
+                            "page_state": page_state,
+                            "search_probe": last_probe,
+                        }
+                    print(
+                        json.dumps(
+                            {
+                                "success": False,
+                                "verification_stage": "post-captcha-recheck",
+                                "page_state": page_state,
+                                "search_probe": last_probe,
+                                "message": "The page looks past the captcha, but search is still not ready. Keep the dedicated browser open and finish any remaining verification or page settlement.",
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                    )
             return {
                 "success": False,
                 "selected_browser": launch_plan["selected_browser"],
                 "user_data_dir": launch_plan["user_data_dir"],
                 "verification_url": search_url,
                 "message": "Timed out waiting for search verification to pass in the dedicated browser.",
+                "last_search_probe": last_probe,
             }
         finally:
             context.close()

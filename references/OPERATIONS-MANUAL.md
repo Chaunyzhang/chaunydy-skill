@@ -149,6 +149,7 @@ Important:
 - normal probes should stay headless and quiet
 - only true human-action stages should open a visible browser window
 - if search hits `verify_check`, `dy_prepare.py` should open the dedicated search page and wait for the human to finish verification before retrying the search probe
+- the verification window must not close merely because the page title or URL no longer looks like a captcha page; it should close only after a real search-readiness probe succeeds
 
 ## 6. Preferred runtime path
 
