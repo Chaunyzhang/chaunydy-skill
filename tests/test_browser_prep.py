@@ -131,6 +131,55 @@ class BrowserPreparationTest(unittest.TestCase):
         self.assertEqual(actions[0], "Search needs human verification. Run: python scripts/dy_search_verify.py")
         self.assertEqual(actions[1], "After the dedicated browser verification succeeds, rerun: python scripts/dy_prepare.py")
 
+    def test_should_attempt_browser_conflict_recovery_only_for_headless_channel_browsers(self) -> None:
+        exc = RuntimeError("BrowserType.launch_persistent_context: Target page, context or browser has been closed")
+        self.assertTrue(
+            browser_prep.should_attempt_browser_conflict_recovery(
+                exc,
+                selected_browser={"selected_browser": "chrome", "user_data_dir": "C:/tmp/chrome"},
+                headless=True,
+            )
+        )
+        self.assertFalse(
+            browser_prep.should_attempt_browser_conflict_recovery(
+                exc,
+                selected_browser={"selected_browser": "chrome", "user_data_dir": "C:/tmp/chrome"},
+                headless=False,
+            )
+        )
+        self.assertFalse(
+            browser_prep.should_attempt_browser_conflict_recovery(
+                exc,
+                selected_browser={"selected_browser": "chromium", "user_data_dir": "C:/tmp/chromium"},
+                headless=True,
+            )
+        )
+
+    def test_launch_persistent_context_retries_after_conflict_cleanup(self) -> None:
+        selected_browser = {"selected_browser": "chrome", "user_data_dir": "C:/tmp/chrome"}
+        expected = object()
+        chromium = mock.Mock()
+        chromium.launch_persistent_context.side_effect = [
+            RuntimeError("BrowserType.launch_persistent_context: Target page, context or browser has been closed"),
+            expected,
+        ]
+        playwright = mock.Mock()
+        playwright.chromium = chromium
+        with mock.patch.object(
+            browser_prep,
+            "terminate_conflicting_browser_processes",
+            return_value={"terminated": 1, "removed_lockfiles": ["C:/tmp/chrome/lockfile"]},
+        ) as cleanup, mock.patch.object(browser_prep.time, "sleep"):
+            result = browser_prep.launch_persistent_context_with_retry(
+                playwright,
+                selected_browser=selected_browser,
+                headless=True,
+                max_attempts=3,
+            )
+        self.assertIs(result, expected)
+        cleanup.assert_called_once_with(selected_browser, only_headless=True)
+        self.assertEqual(chromium.launch_persistent_context.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

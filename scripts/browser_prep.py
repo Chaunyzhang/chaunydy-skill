@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -174,6 +176,111 @@ def build_launch_kwargs(selected_browser: Dict[str, Any], *, headless: bool) -> 
     return launch_kwargs
 
 
+def browser_process_name(selected_browser: Dict[str, Any]) -> Optional[str]:
+    mapping = {
+        "chrome": "chrome.exe",
+        "edge": "msedge.exe",
+    }
+    return mapping.get(str(selected_browser.get("selected_browser", "") or "").lower())
+
+
+def _escape_powershell_single_quoted(value: str) -> str:
+    return value.replace("'", "''")
+
+
+def find_conflicting_browser_processes(selected_browser: Dict[str, Any], *, only_headless: bool = False) -> List[Dict[str, Any]]:
+    process_name = browser_process_name(selected_browser)
+    user_data_dir = str(selected_browser.get("user_data_dir", "") or "").strip()
+    if not process_name or not user_data_dir or os.name != "nt":
+        return []
+    headless_clause = ' -and $_.CommandLine -like "*--headless*"' if only_headless else ""
+    command = f"""
+$processName = '{_escape_powershell_single_quoted(process_name)}'
+$userDataDir = '{_escape_powershell_single_quoted(user_data_dir)}'
+$needle = "--user-data-dir=$userDataDir"
+$items = Get-CimInstance Win32_Process |
+  Where-Object {{ $_.Name -eq $processName -and $_.CommandLine -like "*$needle*"{headless_clause} }} |
+  Select-Object ProcessId, Name, CommandLine
+$items | ConvertTo-Json -Compress
+""".strip()
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", command],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except Exception:
+        return []
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+    try:
+        payload = json.loads(result.stdout)
+    except Exception:
+        return []
+    if isinstance(payload, dict):
+        return [payload]
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    return []
+
+
+def cleanup_browser_profile_lockfiles(selected_browser: Dict[str, Any]) -> List[str]:
+    removed: List[str] = []
+    user_data_dir = Path(str(selected_browser.get("user_data_dir", "") or "").strip())
+    if not user_data_dir.exists():
+        return removed
+    for name in ["lockfile", "SingletonLock", "SingletonCookie", "SingletonSocket"]:
+        candidate = user_data_dir / name
+        try:
+            if candidate.exists():
+                candidate.unlink()
+                removed.append(str(candidate))
+        except Exception:
+            continue
+    return removed
+
+
+def terminate_conflicting_browser_processes(selected_browser: Dict[str, Any], *, only_headless: bool = False) -> Dict[str, Any]:
+    conflicts = find_conflicting_browser_processes(selected_browser, only_headless=only_headless)
+    if not conflicts or os.name != "nt":
+        return {"found": 0, "terminated": 0, "removed_lockfiles": []}
+    terminated = 0
+    for item in conflicts:
+        pid = item.get("ProcessId")
+        if not pid:
+            continue
+        try:
+            subprocess.run(
+                ["powershell", "-NoProfile", "-Command", f"Stop-Process -Id {int(pid)} -Force"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=15,
+            )
+            terminated += 1
+        except Exception:
+            continue
+    time.sleep(1.0)
+    removed_lockfiles = cleanup_browser_profile_lockfiles(selected_browser)
+    return {
+        "found": len(conflicts),
+        "terminated": terminated,
+        "removed_lockfiles": removed_lockfiles,
+        "processes": conflicts,
+    }
+
+
+def should_attempt_browser_conflict_recovery(exc: Exception, *, selected_browser: Dict[str, Any], headless: bool) -> bool:
+    if not headless:
+        return False
+    if not browser_process_name(selected_browser):
+        return False
+    message = str(exc)
+    return "Target page, context or browser has been closed" in message
+
+
 def launch_persistent_context_with_retry(
     playwright: Any,
     *,
@@ -184,11 +291,17 @@ def launch_persistent_context_with_retry(
 ) -> Any:
     last_exc: Optional[Exception] = None
     launch_kwargs = build_launch_kwargs(selected_browser, headless=headless)
+    recovery_attempted = False
     for attempt in range(1, max_attempts + 1):
         try:
             return playwright.chromium.launch_persistent_context(**launch_kwargs)
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
+            if not recovery_attempted and should_attempt_browser_conflict_recovery(exc, selected_browser=selected_browser, headless=headless):
+                recovery = terminate_conflicting_browser_processes(selected_browser, only_headless=True)
+                if recovery.get("terminated") or recovery.get("removed_lockfiles"):
+                    recovery_attempted = True
+                    continue
             if attempt >= max_attempts:
                 break
             time.sleep(retry_delay_seconds)
