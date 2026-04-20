@@ -20,6 +20,7 @@ from dy_core import (
     extract_info_browser,
     health_snapshot,
     load_cookie_dict,
+    probe_browser_login_state,
     runtime_signature_from_snapshot,
 )
 from dy_impl.api_client import DouyinAPIClient
@@ -54,6 +55,8 @@ def prepare_payload(state: Dict[str, Any], snapshot: Dict[str, Any]) -> Dict[str
 def build_next_actions_from_state(state: Dict[str, Any]) -> list[str]:
     caps = state.get("capabilities", {})
     actions: list[str] = []
+    if (state.get("phases", {}).get("login_confirm") or {}).get("status") == "failed":
+        actions.append("Dedicated browser login state is not confirmed. Run python scripts/dy_login.py and complete login in the visible dedicated browser window.")
     if not (caps.get("metadata") or {}).get("ready"):
         actions.append("Fix metadata readiness first. Rerun: python scripts/dy_prepare.py")
     if not (caps.get("comments") or {}).get("ready"):
@@ -218,7 +221,12 @@ def main() -> int:
         return 1
 
     snapshot = health_snapshot()
-    if args.force_login or snapshot.get("needs_login"):
+    login_probe = probe_browser_login_state(browser_name=args.browser, timeout_ms=3000) if not args.force_login else {"success": False, "message": "Forced login requested."}
+    login_confirmed = bool(login_probe.get("success"))
+    set_phase(state, "login_confirm", "ready" if login_confirmed else "failed", login_probe)
+    write_prepare_state(PREP_STATE, state)
+
+    if args.force_login or snapshot.get("needs_login") or not login_confirmed:
         login_result = login_and_export_cookies(requested_browser=args.browser, timeout_seconds=args.timeout_seconds, emit_progress=True)
         if not login_result.get("success"):
             set_phase(state, "login", "failed", login_result)
@@ -229,6 +237,16 @@ def main() -> int:
             return 1
         set_phase(state, "login", "ready", login_result)
         write_prepare_state(PREP_STATE, state)
+        login_probe = probe_browser_login_state(browser_name=args.browser, timeout_ms=6000)
+        login_confirmed = bool(login_probe.get("success"))
+        set_phase(state, "login_confirm", "ready" if login_confirmed else "failed", login_probe)
+        write_prepare_state(PREP_STATE, state)
+        if not login_confirmed:
+            blockers.append("dedicated browser login state is still not confirmed after login")
+            state["blockers"] = blockers
+            write_prepare_state(PREP_STATE, state)
+            print(json.dumps(prepare_payload(state, health_snapshot()), ensure_ascii=False, indent=2))
+            return 1
     else:
         set_phase(state, "login", "ready", {"message": "Existing cookies already look usable."})
         write_prepare_state(PREP_STATE, state)

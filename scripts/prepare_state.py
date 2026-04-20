@@ -21,6 +21,7 @@ def default_prepare_state() -> Dict[str, Any]:
         "phases": {
             "browser_prepare": {"status": "pending", "details": {}},
             "login": {"status": "pending", "details": {}},
+            "login_confirm": {"status": "pending", "details": {}},
             "metadata_probe": {"status": "pending", "details": {}},
             "comments_probe": {"status": "pending", "details": {}},
             "reactions_probe": {"status": "pending", "details": {}},

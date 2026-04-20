@@ -331,6 +331,15 @@ def normalize_aweme_detail(detail: dict[str, Any], *, source: str, webpage_url: 
     }
 
 
+def probe_browser_login_state(browser_name: str = "auto", timeout_ms: int = 6000) -> dict[str, Any]:
+    info = extract_info_browser(PREP_PROBE_VIDEO_URL, wait_ms=timeout_ms, browser_name=browser_name, headless=True)
+    return {
+        "success": bool(info and info.get("id")),
+        "message": "Dedicated browser login state looks usable." if info and info.get("id") else "Dedicated browser login state could not be confirmed from the browser probe.",
+        "info": normalize_info(info) if info else None,
+    }
+
+
 def extract_info_browser(url: str, wait_ms: int = 8000, browser_name: str = "auto", headless: bool = True) -> dict[str, Any] | None:
     ensure_directories()
     try:

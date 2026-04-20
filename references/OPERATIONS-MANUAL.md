@@ -137,10 +137,11 @@ This is different from `dy_doctor.py`.
 
 `dy_prepare.py` verifies:
 
-1. metadata
-2. comments
-3. reactions
-4. search
+1. dedicated browser login-state confirmation
+2. metadata
+3. comments
+4. reactions
+5. search
 
 The output is written into a persistent prepare-state file so later agents can recover after interruptions instead of guessing.
 
@@ -148,6 +149,7 @@ Important:
 
 - normal probes should stay headless and quiet
 - only true human-action stages should open a visible browser window
+- cookie presence alone is not enough to skip login; the dedicated browser login state must be confirmed first
 - if search hits `verify_check`, `dy_prepare.py` should open the dedicated search page and wait for the human to finish verification before retrying the search probe
 - the verification window must not close merely because the page title or URL no longer looks like a captcha page; it should close only after a real search-readiness probe succeeds
 

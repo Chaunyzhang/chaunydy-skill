@@ -52,6 +52,7 @@ python scripts/dy_prepare.py
 `dy_prepare.py` is now the real foundation step. It:
 
 - selects the dedicated browser/profile
+- confirms whether the dedicated browser login state is actually usable
 - opens login when needed
 - exports cookies
 - probes metadata readiness
@@ -61,6 +62,12 @@ python scripts/dy_prepare.py
 - writes a persistent prepare-state file so later agents can resume from known state
 
 When search returns `verify_check`, `dy_prepare.py` now opens the dedicated browser search page and waits for the human to complete verification before rechecking search readiness.
+
+Important:
+
+- cookie presence alone does not automatically skip login anymore
+- the prepare flow first tries to confirm that the dedicated browser profile can actually access a logged-in page
+- if that confirmation fails, it will force the visible login stage before continuing
 
 ## Install
 
