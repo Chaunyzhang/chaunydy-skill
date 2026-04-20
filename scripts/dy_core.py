@@ -12,7 +12,7 @@ from urllib.parse import unquote
 import requests
 from playwright.sync_api import sync_playwright
 from yt_dlp import YoutubeDL
-from browser_prep import scan_browser_environment
+from browser_prep import scan_browser_environment, select_login_browser
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -197,15 +197,83 @@ def _find_aweme_candidate(node: Any) -> dict[str, Any] | None:
     return None
 
 
-def extract_info_browser(url: str, wait_ms: int = 8000) -> dict[str, Any] | None:
+def _extract_render_payload_text(page: Any) -> str:
+    selectors = [
+        "#RENDER_DATA",
+        "script#RENDER_DATA",
+        "#__UNIVERSAL_DATA_FOR_REHYDRATION__",
+        "script#__UNIVERSAL_DATA_FOR_REHYDRATION__",
+    ]
+    for selector in selectors:
+        try:
+            locator = page.locator(selector)
+            if locator.count() > 0:
+                text = locator.first.text_content()
+                if text and text.strip():
+                    return text
+        except Exception:
+            continue
+    return ""
+
+
+def normalize_aweme_detail(detail: dict[str, Any], *, source: str, webpage_url: str, page_title: str = "", browser_profile: str = "", browser_user_data_dir: str = "") -> dict[str, Any]:
+    author = detail.get("author") if isinstance(detail.get("author"), dict) else {}
+    stats = detail.get("statistics") if isinstance(detail.get("statistics"), dict) else {}
+    video = detail.get("video") if isinstance(detail.get("video"), dict) else {}
+    desc = detail.get("desc") or detail.get("preview_title") or page_title
+    return {
+        "id": detail.get("aweme_id", "") or detail.get("group_id", ""),
+        "title": desc,
+        "description": detail.get("desc", "") or desc,
+        "uploader": author.get("nickname", ""),
+        "uploader_id": author.get("sec_uid", "") or author.get("uid", ""),
+        "duration": int((video.get("duration") or 0) / 1000) if video.get("duration") else 0,
+        "view_count": stats.get("play_count", 0),
+        "like_count": stats.get("digg_count", 0),
+        "comment_count": stats.get("comment_count", 0),
+        "timestamp": detail.get("create_time", 0),
+        "webpage_url": webpage_url,
+        "ext": "mp4",
+        "_raw_aweme": detail,
+        "_source": source,
+        "_page_title": page_title,
+        "_browser_profile": browser_profile,
+        "_browser_user_data_dir": browser_user_data_dir,
+    }
+
+
+def extract_info_browser(url: str, wait_ms: int = 8000, browser_name: str = "auto") -> dict[str, Any] | None:
     ensure_directories()
+    try:
+        launch_plan = select_login_browser(PROFILE_ROOT, USER_DATA_DIR, requested_browser=browser_name)
+    except Exception:
+        return None
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context()
-        cookie_list = load_cookie_list()
-        if cookie_list:
-            context.add_cookies(cookie_list)
+        launch_kwargs = {
+            "user_data_dir": launch_plan["user_data_dir"],
+            "headless": False,
+        }
+        if launch_plan.get("playwright_channel"):
+            launch_kwargs["channel"] = launch_plan["playwright_channel"]
+        context = p.chromium.launch_persistent_context(**launch_kwargs)
         page = context.new_page()
+        detail_payload: dict[str, Any] | None = None
+
+        def on_response(resp: Any) -> None:
+            nonlocal detail_payload
+            if detail_payload is not None:
+                return
+            response_url = str(getattr(resp, "url", "") or "")
+            if "/aweme/v1/web/aweme/detail/" not in response_url:
+                return
+            try:
+                payload = resp.json()
+            except Exception:
+                return
+            if isinstance(payload, dict) and isinstance(payload.get("aweme_detail"), dict):
+                detail_payload = payload["aweme_detail"]
+
+        page.on("response", on_response)
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=120000)
             page.wait_for_timeout(max(wait_ms, 10000))
@@ -214,54 +282,34 @@ def extract_info_browser(url: str, wait_ms: int = 8000) -> dict[str, Any] | None
                 title = page.title()
             except Exception:
                 title = ""
-            render_text = page.locator("#RENDER_DATA").text_content()
+            if detail_payload:
+                return normalize_aweme_detail(
+                    detail_payload,
+                    source="browser_detail_api",
+                    webpage_url=final_url,
+                    page_title=title,
+                    browser_profile=launch_plan["selected_browser"],
+                    browser_user_data_dir=launch_plan["user_data_dir"],
+                )
+            render_text = _extract_render_payload_text(page)
             if not render_text:
                 return None
             render_data = json.loads(unquote(render_text))
             aweme = _find_aweme_candidate(render_data)
             if not aweme:
                 return None
-            author = (
-                aweme.get("author")
-                if isinstance(aweme.get("author"), dict)
-                else aweme.get("authorInfo")
-                if isinstance(aweme.get("authorInfo"), dict)
-                else {}
+            return normalize_aweme_detail(
+                aweme,
+                source="browser_render_data",
+                webpage_url=final_url,
+                page_title=title,
+                browser_profile=launch_plan["selected_browser"],
+                browser_user_data_dir=launch_plan["user_data_dir"],
             )
-            stats = (
-                aweme.get("statistics")
-                if isinstance(aweme.get("statistics"), dict)
-                else aweme.get("stats")
-                if isinstance(aweme.get("stats"), dict)
-                else {}
-            )
-            video = aweme.get("video") if isinstance(aweme.get("video"), dict) else {}
-            aweme_id = aweme.get("aweme_id") or aweme.get("awemeId") or aweme.get("groupId") or ""
-            desc = aweme.get("desc") or aweme.get("itemTitle") or aweme.get("caption") or title
-            uploader = author.get("nickname") or author.get("nickName") or author.get("name") or ""
-            uploader_id = author.get("sec_uid") or author.get("secUid") or author.get("uid") or aweme.get("authorUserId") or ""
-            return {
-                "id": aweme_id,
-                "title": desc,
-                "description": desc,
-                "uploader": uploader,
-                "uploader_id": uploader_id,
-                "duration": int((video.get("duration") or 0) / 1000) if video.get("duration") else 0,
-                "view_count": stats.get("play_count", 0) or stats.get("playCount", 0),
-                "like_count": stats.get("digg_count", 0) or stats.get("diggCount", 0),
-                "comment_count": stats.get("comment_count", 0) or stats.get("commentCount", 0),
-                "timestamp": aweme.get("create_time", 0) or aweme.get("createTime", 0),
-                "webpage_url": final_url,
-                "ext": "mp4",
-                "_raw_aweme": aweme,
-                "_source": "browser_render_data",
-                "_page_title": title,
-            }
         except Exception:
             return None
         finally:
             context.close()
-            browser.close()
 
 
 def _extract_best_url(obj: Any) -> str:
@@ -344,7 +392,7 @@ def ydl_options(
 def extract_info(url: str, browser_cookie_source: str | None = None, cookie_file: str | None = None) -> dict[str, Any]:
     if not validate_url(url):
         raise SystemExit(f"Invalid URL: {url}")
-    browser_info = extract_info_browser(url)
+    browser_info = extract_info_browser(url, browser_name=browser_cookie_source or "auto")
     if browser_info:
         return browser_info
     api_info = asyncio.run(extract_info_api(url))
@@ -412,7 +460,7 @@ def download_media(
 ) -> dict[str, Any]:
     if not validate_url(url):
         raise SystemExit(f"Invalid URL: {url}")
-    browser_info = extract_info_browser(url)
+    browser_info = extract_info_browser(url, browser_name=browser_cookie_source or "auto")
     if browser_info and isinstance(browser_info.get("_raw_aweme"), dict):
         aweme = browser_info["_raw_aweme"]
         video = aweme.get("video") or {}
