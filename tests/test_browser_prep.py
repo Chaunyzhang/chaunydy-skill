@@ -13,6 +13,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import browser_prep  # noqa: E402
+import dy_doctor  # noqa: E402
 import dy_core  # noqa: E402
 
 
@@ -64,6 +65,16 @@ class BrowserPreparationTest(unittest.TestCase):
         ]
         self.assertTrue(dy_core.looks_logged_in(cookies))
         self.assertFalse(dy_core.looks_logged_in(cookies[:-1]))
+
+    def test_doctor_next_actions_asks_for_login_when_needed(self) -> None:
+        snapshot = {
+            "preferred_login_browser": "chrome",
+            "needs_login": True,
+            "ffmpeg_present": False,
+        }
+        actions = dy_doctor.build_next_actions(snapshot, {"success": True})
+        self.assertTrue(any("dy_login.py" in action for action in actions))
+        self.assertTrue(any("ffmpeg" in action for action in actions))
 
 
 if __name__ == "__main__":

@@ -22,6 +22,23 @@ It does not expose risky write workflows as first-class commands.
 
 ## Status first
 
+On a new machine, run the doctor first:
+
+```bash
+python scripts/dy_doctor.py --json
+```
+
+This is the self-check stage. It verifies:
+
+- dedicated browser candidates
+- dedicated profile directories
+- cookie health
+- Playwright launchability
+- whether login is still needed
+- exact next actions for weak models
+
+Then run:
+
 ```bash
 python scripts/dy_status.py --json
 ```

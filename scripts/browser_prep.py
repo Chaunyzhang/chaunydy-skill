@@ -133,3 +133,38 @@ def select_login_browser(
         "user_data_dir": chosen["dedicated_profile_dir"],
         "browser_scan": snapshot["browsers"],
     }
+
+
+def probe_playwright_browser(
+    *,
+    selected_browser: Dict[str, Any],
+    headless: bool,
+    target_url: str = "about:blank",
+    wait_ms: int = 1000,
+) -> Dict[str, Any]:
+    from playwright.sync_api import sync_playwright
+
+    launch_kwargs: Dict[str, Any] = {
+        "user_data_dir": selected_browser["user_data_dir"],
+        "headless": headless,
+    }
+    if selected_browser.get("playwright_channel"):
+        launch_kwargs["channel"] = selected_browser["playwright_channel"]
+
+    with sync_playwright() as p:
+        context = p.chromium.launch_persistent_context(**launch_kwargs)
+        page = context.new_page()
+        try:
+            page.goto(target_url, wait_until="domcontentloaded", timeout=120000)
+            page.wait_for_timeout(max(wait_ms, 0))
+            return {
+                "success": True,
+                "selected_browser": selected_browser["selected_browser"],
+                "playwright_channel": selected_browser.get("playwright_channel"),
+                "user_data_dir": selected_browser["user_data_dir"],
+                "headless": headless,
+                "current_url": page.url,
+                "page_title": page.title(),
+            }
+        finally:
+            context.close()

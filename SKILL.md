@@ -11,7 +11,13 @@ Detailed operator manual:
 
 ## First rule
 
-Always check status first:
+Always run the self-check stage first on a new machine:
+
+```bash
+python scripts/dy_doctor.py --json
+```
+
+Then check status:
 
 ```bash
 python scripts/dy_status.py --json

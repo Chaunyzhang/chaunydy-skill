@@ -43,7 +43,22 @@ Reason:
 
 ## 3. First command always
 
-Always run this first:
+Always run this first on a new machine:
+
+```bash
+python scripts/dy_doctor.py --json
+```
+
+This is the self-check stage.
+Use it to confirm:
+
+- browser candidates
+- dedicated profile directories
+- cookie health
+- whether login is still needed
+- whether Playwright can launch the selected browser path
+
+Then run:
 
 ```bash
 python scripts/dy_status.py --json

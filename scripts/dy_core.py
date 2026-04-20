@@ -579,5 +579,6 @@ def health_snapshot() -> dict[str, Any]:
             if not cookie_state["looks_logged_in"]
             else ""
         ),
+        "doctor_hint": "Run python scripts/dy_doctor.py --json before first use on a new machine.",
         "all_ready": all_ready,
     }
