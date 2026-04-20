@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import sys
+import hashlib
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
@@ -12,7 +13,7 @@ from urllib.parse import unquote
 import requests
 from playwright.sync_api import sync_playwright
 from yt_dlp import YoutubeDL
-from browser_prep import scan_browser_environment, select_login_browser
+from browser_prep import probe_playwright_browser, scan_browser_environment, select_login_browser
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -25,6 +26,7 @@ if str(ROOT) not in sys.path:
 
 from dy_impl.api_client import DouyinAPIClient
 from dy_impl.url_parser import URLParser
+from prepare_state import read_prepare_state
 from dy_utils import parse_url_type, validate_url
 DATA_DIR = Path.home() / ".local" / "share" / "chaunydy-skill"
 OUTPUT_DIR = ROOT / "out"
@@ -32,6 +34,9 @@ PROFILE_ROOT = DATA_DIR / "browser-profiles"
 USER_DATA_DIR = DATA_DIR / "browser-profile"
 COOKIE_JSON = DATA_DIR / "cookies.json"
 COOKIE_TXT = DATA_DIR / "cookies.txt"
+PREP_STATE = DATA_DIR / "prepare-state.json"
+PREP_PROBE_VIDEO_URL = "https://www.douyin.com/video/7604129988555574538"
+PREP_PROBE_SEARCH_KEYWORD = "动画"
 COOKIE_FILE_CANDIDATES = [
     COOKIE_TXT,
     ROOT / "cookies.txt",
@@ -143,6 +148,90 @@ def cookie_health_snapshot() -> dict[str, Any]:
         "cookie_count": len(cookies),
         "looks_logged_in": looks_logged_in(cookies),
         "cookie_name_preview": cookie_names[:12],
+        "cookie_json_mtime": COOKIE_JSON.stat().st_mtime if COOKIE_JSON.is_file() else None,
+        "cookie_txt_mtime": COOKIE_TXT.stat().st_mtime if COOKIE_TXT.is_file() else None,
+    }
+
+
+def runtime_signature_from_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    cookies = snapshot.get("cookies", {})
+    signature = {
+        "preferred_login_browser": snapshot.get("preferred_login_browser"),
+        "preferred_login_profile_dir": snapshot.get("preferred_login_profile_dir"),
+        "cookie_json_exists": cookies.get("cookie_json_exists"),
+        "cookie_txt_exists": cookies.get("cookie_txt_exists"),
+        "cookie_count": cookies.get("cookie_count"),
+        "looks_logged_in": cookies.get("looks_logged_in"),
+        "cookie_json_mtime": cookies.get("cookie_json_mtime"),
+        "cookie_txt_mtime": cookies.get("cookie_txt_mtime"),
+    }
+    digest = hashlib.sha256(json.dumps(signature, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    return {**signature, "digest": digest}
+
+
+def prepare_state_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
+    state = read_prepare_state(PREP_STATE)
+    current_signature = runtime_signature_from_snapshot(snapshot)
+    saved_signature = state.get("runtime_signature", {}) if isinstance(state, dict) else {}
+    signature_matches = bool(saved_signature) and saved_signature.get("digest") == current_signature.get("digest")
+    capabilities = state.get("capabilities", {}) if isinstance(state, dict) else {}
+    return {
+        "state_file": str(PREP_STATE),
+        "state_exists": PREP_STATE.is_file(),
+        "updated_at": state.get("updated_at"),
+        "selected_browser": state.get("selected_browser"),
+        "user_data_dir": state.get("user_data_dir"),
+        "signature_matches": signature_matches,
+        "capabilities": capabilities,
+        "blockers": state.get("blockers", []),
+        "prepared_workflows_ready": bool(capabilities) and all(bool((capabilities.get(name) or {}).get("ready")) for name in ["metadata", "download", "comments", "reactions", "search"]),
+    }
+
+
+def capability_gate(capability: str) -> dict[str, Any]:
+    snapshot = health_snapshot(include_prepare_state=False)
+    prepare_summary = prepare_state_summary(snapshot)
+    capabilities = prepare_summary.get("capabilities", {})
+    capability_state = capabilities.get(capability) if isinstance(capabilities, dict) else None
+    if not prepare_summary.get("state_exists"):
+        return {
+            "ready": False,
+            "message": f"No prepare-state file found. Run python scripts/dy_prepare.py before using the {capability} workflow.",
+            "status_snapshot": snapshot,
+            "prepare_summary": prepare_summary,
+        }
+    if not prepare_summary.get("signature_matches"):
+        return {
+            "ready": False,
+            "message": f"Prepare-state no longer matches the current browser/cookie environment. Rerun python scripts/dy_prepare.py before using the {capability} workflow.",
+            "status_snapshot": snapshot,
+            "prepare_summary": prepare_summary,
+        }
+    if not isinstance(capability_state, dict) or not capability_state.get("ready"):
+        return {
+            "ready": False,
+            "message": (capability_state or {}).get("message") or f"{capability} is not prepared yet. Run python scripts/dy_prepare.py.",
+            "status_snapshot": snapshot,
+            "prepare_summary": prepare_summary,
+        }
+    if capability in {"metadata", "download", "comments", "reactions", "search"}:
+        try:
+            plan = select_login_browser(PROFILE_ROOT, USER_DATA_DIR, requested_browser=prepare_summary.get("selected_browser") or "auto")
+            launch_probe = probe_playwright_browser(selected_browser=plan, headless=True, target_url="about:blank", wait_ms=300)
+        except Exception as exc:
+            launch_probe = {"success": False, "message": str(exc)}
+        if not launch_probe.get("success"):
+            return {
+                "ready": False,
+                "message": "Prepared browser runtime is no longer launchable. Close conflicting dedicated browser windows and rerun python scripts/dy_prepare.py.",
+                "status_snapshot": snapshot,
+                "prepare_summary": {**prepare_summary, "launch_probe": launch_probe},
+            }
+    return {
+        "ready": True,
+        "message": "",
+        "status_snapshot": snapshot,
+        "prepare_summary": prepare_summary,
     }
 
 
@@ -249,32 +338,33 @@ def extract_info_browser(url: str, wait_ms: int = 8000, browser_name: str = "aut
     except Exception:
         return None
     with sync_playwright() as p:
-        launch_kwargs = {
-            "user_data_dir": launch_plan["user_data_dir"],
-            "headless": False,
-        }
-        if launch_plan.get("playwright_channel"):
-            launch_kwargs["channel"] = launch_plan["playwright_channel"]
-        context = p.chromium.launch_persistent_context(**launch_kwargs)
-        page = context.new_page()
-        detail_payload: dict[str, Any] | None = None
-
-        def on_response(resp: Any) -> None:
-            nonlocal detail_payload
-            if detail_payload is not None:
-                return
-            response_url = str(getattr(resp, "url", "") or "")
-            if "/aweme/v1/web/aweme/detail/" not in response_url:
-                return
-            try:
-                payload = resp.json()
-            except Exception:
-                return
-            if isinstance(payload, dict) and isinstance(payload.get("aweme_detail"), dict):
-                detail_payload = payload["aweme_detail"]
-
-        page.on("response", on_response)
+        context = None
         try:
+            launch_kwargs = {
+                "user_data_dir": launch_plan["user_data_dir"],
+                "headless": False,
+            }
+            if launch_plan.get("playwright_channel"):
+                launch_kwargs["channel"] = launch_plan["playwright_channel"]
+            context = p.chromium.launch_persistent_context(**launch_kwargs)
+            page = context.new_page()
+            detail_payload: dict[str, Any] | None = None
+
+            def on_response(resp: Any) -> None:
+                nonlocal detail_payload
+                if detail_payload is not None:
+                    return
+                response_url = str(getattr(resp, "url", "") or "")
+                if "/aweme/v1/web/aweme/detail/" not in response_url:
+                    return
+                try:
+                    payload = resp.json()
+                except Exception:
+                    return
+                if isinstance(payload, dict) and isinstance(payload.get("aweme_detail"), dict):
+                    detail_payload = payload["aweme_detail"]
+
+            page.on("response", on_response)
             page.goto(url, wait_until="domcontentloaded", timeout=120000)
             page.wait_for_timeout(max(wait_ms, 10000))
             final_url = page.url
@@ -309,7 +399,10 @@ def extract_info_browser(url: str, wait_ms: int = 8000, browser_name: str = "aut
         except Exception:
             return None
         finally:
-            context.close()
+            try:
+                context.close()
+            except Exception:
+                pass
 
 
 def _extract_best_url(obj: Any) -> str:
@@ -553,14 +646,14 @@ def download_media(
     }
 
 
-def health_snapshot() -> dict[str, Any]:
+def health_snapshot(*, include_prepare_state: bool = True) -> dict[str, Any]:
     ensure_directories()
     browser_cookie_source = pick_browser_cookie_source()
     browser_scan = scan_browser_environment(PROFILE_ROOT, USER_DATA_DIR)
     cookie_state = cookie_health_snapshot()
     preferred_browser = browser_scan.get("preferred_browser") or {}
-    all_ready = bool(cookie_state["looks_logged_in"] and preferred_browser.get("name"))
-    return {
+    base_ready = bool(cookie_state["looks_logged_in"] and preferred_browser.get("name"))
+    payload = {
         "data_dir": str(DATA_DIR),
         "output_dir": str(OUTPUT_DIR),
         "yt_dlp_ready": True,
@@ -580,5 +673,17 @@ def health_snapshot() -> dict[str, Any]:
             else ""
         ),
         "doctor_hint": "Run python scripts/dy_doctor.py --json before first use on a new machine.",
-        "all_ready": all_ready,
+        "base_ready": base_ready,
+        "all_ready": base_ready,
     }
+    payload["runtime_signature"] = runtime_signature_from_snapshot(payload)
+    if include_prepare_state:
+        payload["prepare_state"] = prepare_state_summary(payload)
+        payload["prepared_workflows_ready"] = payload["prepare_state"].get("prepared_workflows_ready", False)
+        payload["all_ready"] = bool(
+            base_ready
+            and payload["prepare_state"].get("state_exists")
+            and payload["prepare_state"].get("signature_matches")
+            and payload["prepared_workflows_ready"]
+        )
+    return payload

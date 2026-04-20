@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.dy_core import extract_info_browser
+from scripts.dy_core import capability_gate, extract_info_browser
 
 
 async def read_reaction_state(url: str) -> dict:
@@ -46,6 +46,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Read Douyin like/favorite state from browser-render-data.")
     parser.add_argument("url")
     args = parser.parse_args()
+
+    gate = capability_gate("reactions")
+    if not gate.get("ready"):
+        result = {"success": False, "message": gate.get("message"), "prepare_summary": gate.get("prepare_summary")}
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        raise SystemExit(1)
 
     result = asyncio.run(read_reaction_state(args.url))
     print(json.dumps(result, ensure_ascii=False, indent=2))

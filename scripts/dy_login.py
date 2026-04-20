@@ -50,22 +50,23 @@ def to_netscape(cookies: list[dict]) -> str:
         value = str(cookie.get("value", "") or "")
         lines.append("\t".join([domain, include_subdomains, path, secure, expires, name, value]))
     return "\n".join(lines) + "\n"
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Open Douyin in a browser and export cookies after login.")
-    parser.add_argument("--timeout-seconds", type=int, default=300)
-    parser.add_argument("--browser", default="auto", help="Preferred dedicated browser: auto, chrome, edge, chromium")
-    args = parser.parse_args()
 
+def login_and_export_cookies(requested_browser: str = "auto", timeout_seconds: int = 300, emit_progress: bool = True) -> dict:
     ensure_dirs()
 
-    try:
-        launch_plan = select_login_browser(PROFILE_ROOT, USER_DATA_DIR, requested_browser=args.browser)
-    except Exception as exc:
-        print(json.dumps({"success": False, "message": str(exc)}, ensure_ascii=False, indent=2))
-        return 1
+    def emit(message: str) -> None:
+        if emit_progress:
+            print(message)
 
-    print("Preparing dedicated browser environment for Douyin login.")
-    print(
+    try:
+        launch_plan = select_login_browser(PROFILE_ROOT, USER_DATA_DIR, requested_browser=requested_browser)
+    except Exception as exc:
+        payload = {"success": False, "message": str(exc)}
+        emit(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+    emit("Preparing dedicated browser environment for Douyin login.")
+    emit(
         json.dumps(
             {
                 "requested_browser": launch_plan["requested_browser"],
@@ -79,11 +80,11 @@ def main() -> int:
             indent=2,
         )
     )
-    print("Attempting to open the dedicated Douyin login window now.")
-    print("Do not continue unless you personally see a browser window on your desktop.")
-    print(f"I will keep checking cookies for up to {args.timeout_seconds} seconds.")
+    emit("Attempting to open the dedicated Douyin login window now.")
+    emit("Do not continue unless you personally see a browser window on your desktop.")
+    emit(f"I will keep checking cookies for up to {timeout_seconds} seconds.")
 
-    deadline = time.time() + max(args.timeout_seconds, 30)
+    deadline = time.time() + max(timeout_seconds, 30)
     try:
         with sync_playwright() as p:
             launch_kwargs = {
@@ -96,7 +97,7 @@ def main() -> int:
             page = context.new_page()
             page.goto("https://www.douyin.com/", wait_until="domcontentloaded", timeout=120000)
             page.wait_for_timeout(3000)
-            print(
+            emit(
                 json.dumps(
                     {
                         "success": True,
@@ -119,34 +120,52 @@ def main() -> int:
                 if looks_logged_in(cookies):
                     COOKIE_JSON.write_text(json.dumps(cookies, ensure_ascii=False, indent=2), encoding="utf-8")
                     COOKIE_TXT.write_text(to_netscape(cookies), encoding="utf-8")
-                    print(f"Exported cookies to:\n- {COOKIE_JSON}\n- {COOKIE_TXT}")
+                    emit(f"Exported cookies to:\n- {COOKIE_JSON}\n- {COOKIE_TXT}")
                     exported = True
                     break
 
             if not exported:
-                print("Timed out before a stable Douyin cookie set was observed.")
+                emit("Timed out before a stable Douyin cookie set was observed.")
                 context.close()
-                return 1
-
-            print("You can close the browser window now.")
-            context.close()
-            return 0
-    except Exception as exc:
-        print(
-            json.dumps(
-                {
+                return {
                     "success": False,
-                    "window_ready": False,
+                    "window_ready": True,
                     "selected_browser": launch_plan["selected_browser"],
                     "user_data_dir": launch_plan["user_data_dir"],
-                    "message": str(exc),
-                    "human_action_required": "If no browser window appeared, stop here and report that the login window never became visible.",
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
-        return 1
+                    "message": "Timed out before a stable Douyin cookie set was observed.",
+                }
+
+            emit("You can close the browser window now.")
+            context.close()
+            return {
+                "success": True,
+                "window_ready": True,
+                "selected_browser": launch_plan["selected_browser"],
+                "user_data_dir": launch_plan["user_data_dir"],
+                "cookie_json": str(COOKIE_JSON),
+                "cookie_txt": str(COOKIE_TXT),
+            }
+    except Exception as exc:
+        payload = {
+            "success": False,
+            "window_ready": False,
+            "selected_browser": launch_plan["selected_browser"],
+            "user_data_dir": launch_plan["user_data_dir"],
+            "message": str(exc),
+            "human_action_required": "If no browser window appeared, stop here and report that the login window never became visible.",
+        }
+        emit(json.dumps(payload, ensure_ascii=False, indent=2))
+        return payload
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Open Douyin in a browser and export cookies after login.")
+    parser.add_argument("--timeout-seconds", type=int, default=300)
+    parser.add_argument("--browser", default="auto", help="Preferred dedicated browser: auto, chrome, edge, chromium")
+    args = parser.parse_args()
+
+    result = login_and_export_cookies(requested_browser=args.browser, timeout_seconds=args.timeout_seconds, emit_progress=True)
+    return 0 if result.get("success") else 1
 
 
 if __name__ == "__main__":

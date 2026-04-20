@@ -73,7 +73,7 @@ class BrowserPreparationTest(unittest.TestCase):
             "ffmpeg_present": False,
         }
         actions = dy_doctor.build_next_actions(snapshot, {"success": True})
-        self.assertTrue(any("dy_login.py" in action for action in actions))
+        self.assertTrue(any("dy_prepare.py" in action for action in actions))
         self.assertTrue(any("ffmpeg" in action for action in actions))
 
 

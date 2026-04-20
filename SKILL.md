@@ -23,6 +23,12 @@ Then check status:
 python scripts/dy_status.py --json
 ```
 
+Then run the actual preparation stage:
+
+```bash
+python scripts/dy_prepare.py
+```
+
 If Douyin requires fresh cookies, run:
 
 ```bash
@@ -86,7 +92,8 @@ Critical secret-handling rule:
 ## Weak-model rules
 
 1. Do not skip `dy_status.py`
-2. Prefer read-only operations
-3. Prefer metadata before download when debugging a broken link
-4. Prefer local media for transcription when possible
-5. If transcription is requested and `DASHSCOPE_API_KEY` is missing, stop and tell the user to open their own DashScope account and configure the key in the current agent session only
+2. Do not skip `dy_prepare.py`
+3. Prefer read-only operations
+4. Prefer metadata before download when debugging a broken link
+5. Prefer local media for transcription when possible
+6. If transcription is requested and `DASHSCOPE_API_KEY` is missing, stop and tell the user to open their own DashScope account and configure the key in the current agent session only

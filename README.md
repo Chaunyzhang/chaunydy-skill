@@ -43,6 +43,23 @@ Then run:
 python scripts/dy_status.py --json
 ```
 
+Then run the actual preparation / readiness stage:
+
+```bash
+python scripts/dy_prepare.py
+```
+
+`dy_prepare.py` is now the real foundation step. It:
+
+- selects the dedicated browser/profile
+- opens login when needed
+- exports cookies
+- probes metadata readiness
+- probes comments readiness
+- probes reaction readiness
+- probes search readiness
+- writes a persistent prepare-state file so later agents can resume from known state
+
 ## Install
 
 ```bash
@@ -86,6 +103,11 @@ python scripts/dy_info.py "<douyin_share_url>" --formats
 python scripts/dy_info.py "<douyin_share_url>" --browser chrome
 python scripts/dy_info.py "<douyin_share_url>" --cookie-file "D:/path/to/cookies.txt"
 ```
+
+Important:
+
+- `dy_info.py` now expects `dy_prepare.py` to have succeeded first
+- if the prepare-state is missing or stale, it will stop and tell you to rerun preparation
 
 ### Download
 

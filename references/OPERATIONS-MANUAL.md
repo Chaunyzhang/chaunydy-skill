@@ -64,6 +64,12 @@ Then run:
 python scripts/dy_status.py --json
 ```
 
+Then run:
+
+```bash
+python scripts/dy_prepare.py
+```
+
 If `all_ready` is true, continue.
 
 If `all_ready` is false, stop and inspect the missing parts.
@@ -115,6 +121,28 @@ Important:
 - Do not assume the login window is visible just because the script says it is preparing one
 - Treat `window_ready: true` plus human confirmation as the real signal
 - Do not switch to another browser path on your own
+
+## 5.5 Real preparation stage
+
+The real readiness gate is:
+
+```bash
+python scripts/dy_prepare.py
+```
+
+This is different from `dy_doctor.py`.
+
+- `dy_doctor.py` = self-check
+- `dy_prepare.py` = browser selection + login + capability verification + persistent prepare-state
+
+`dy_prepare.py` verifies:
+
+1. metadata
+2. comments
+3. reactions
+4. search
+
+The output is written into a persistent prepare-state file so later agents can recover after interruptions instead of guessing.
 
 ## 6. Preferred runtime path
 
@@ -278,12 +306,13 @@ Expected success signs:
 
 If you are a weak model, follow this exact order:
 
-1. `python scripts/dy_status.py --json`
-2. If not ready, stop and ask the user to complete `python scripts/dy_login.py`
-3. After the user says login is done, rerun `python scripts/dy_status.py --json`
-4. For any new share link, run `python scripts/dy_info.py "<url>"` first
-5. Only after metadata succeeds, run download or comments or reactions
-6. Only after download succeeds, run transcription
+1. `python scripts/dy_doctor.py --json`
+2. `python scripts/dy_status.py --json`
+3. `python scripts/dy_prepare.py`
+4. If prepare says login is needed, stop and wait for the human to complete the visible login window
+5. After prepare succeeds, run `python scripts/dy_info.py "<url>"` first
+6. Only after metadata succeeds, run download or comments or reactions
+7. Only after download succeeds, run transcription
 
 Do not reorder these steps.
 

@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 
 from dy_impl.api_client import DouyinAPIClient
 from dy_impl.url_parser import URLParser
-from scripts.dy_core import extract_info_browser, load_cookie_dict
+from scripts.dy_core import capability_gate, extract_info_browser, load_cookie_dict
 
 
 def normalize_comment(item: dict) -> dict:
@@ -71,6 +71,12 @@ def main() -> None:
     parser.add_argument("url")
     parser.add_argument("--count", type=int, default=10)
     args = parser.parse_args()
+
+    gate = capability_gate("comments")
+    if not gate.get("ready"):
+        result = {"success": False, "message": gate.get("message"), "prepare_summary": gate.get("prepare_summary")}
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        raise SystemExit(1)
 
     result = asyncio.run(fetch_comments(args.url, count=args.count))
     print(json.dumps(result, ensure_ascii=False, indent=2))

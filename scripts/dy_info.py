@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from dy_core import extract_info, list_formats, normalize_info
+from dy_core import capability_gate, extract_info, list_formats, normalize_info
 
 
 def main() -> None:
@@ -14,6 +14,12 @@ def main() -> None:
     parser.add_argument("--browser", default="", help="Optional browser cookie source, e.g. chrome or edge")
     parser.add_argument("--cookie-file", default="", help="Optional Netscape cookies.txt path")
     args = parser.parse_args()
+
+    gate = capability_gate("metadata")
+    if not gate.get("ready"):
+        result = {"success": False, "message": gate.get("message"), "prepare_summary": gate.get("prepare_summary")}
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        raise SystemExit(1)
 
     if args.formats:
         result = list_formats(args.url, browser_cookie_source=args.browser or None, cookie_file=args.cookie_file or None)

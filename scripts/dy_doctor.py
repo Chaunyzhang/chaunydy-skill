@@ -20,10 +20,10 @@ def build_next_actions(snapshot: Dict[str, Any], probe: Dict[str, Any] | None) -
     if probe and not probe.get("success"):
         actions.append("Browser launch probe failed. Fix the reported browser/channel issue before attempting login.")
     if snapshot.get("needs_login"):
-        actions.append("Run: python scripts/dy_login.py")
-        actions.append("Only continue after a human personally sees the dedicated Douyin login window.")
+        actions.append("Run: python scripts/dy_prepare.py")
+        actions.append("The prepare stage will open the dedicated login window and verify metadata/comments/reactions/search readiness.")
     else:
-        actions.append("Login cookies look usable. You can continue with: python scripts/dy_info.py \"<douyin_url>\"")
+        actions.append("Login cookies look usable. Next run: python scripts/dy_prepare.py")
     if not snapshot.get("ffmpeg_present"):
         actions.append("Install ffmpeg if you plan to transcribe local video files.")
     return actions
@@ -93,7 +93,7 @@ def doctor_snapshot(requested_browser: str = "auto", probe_window: bool = False)
         "blockers": blockers,
         "next_actions": build_next_actions(snapshot, probe_result),
         "weak_model_hint": (
-            "Run this doctor first on a new machine. If blockers is non-empty, fix blockers before trying dy_login.py or dy_info.py."
+            "Run this doctor first on a new machine. Then run dy_prepare.py before any metadata, download, comments, or reaction workflow."
         ),
     }
 
