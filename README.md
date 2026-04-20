@@ -3,7 +3,6 @@
 A self-contained read-mostly Douyin skill for:
 
 - metadata
-- keyword search
 - format listing
 - audio/video download
 - comments
@@ -87,18 +86,6 @@ python scripts/dy_info.py "<douyin_share_url>" --formats
 python scripts/dy_info.py "<douyin_share_url>" --browser chrome
 python scripts/dy_info.py "<douyin_share_url>" --cookie-file "D:/path/to/cookies.txt"
 ```
-
-### Keyword search
-
-```bash
-python scripts/dy_search.py "动画" --count 5
-```
-
-Current reality:
-
-- search support now exists
-- but Douyin may return `verify_check` for keyword search even when normal metadata/download paths work
-- when that happens, the script will report it honestly instead of faking success
 
 ### Download
 

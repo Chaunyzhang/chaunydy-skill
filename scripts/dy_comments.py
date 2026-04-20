@@ -13,7 +13,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from dy_impl.api_client import DouyinAPIClient
-from scripts.dy_core import get_video_detail_via_api, load_cookie_dict, resolve_aweme_id
+from dy_impl.url_parser import URLParser
+from scripts.dy_core import extract_info_browser, load_cookie_dict
 
 
 def normalize_comment(item: dict) -> dict:
@@ -42,28 +43,26 @@ def normalize_comment(item: dict) -> dict:
 
 
 async def fetch_comments(url: str, count: int = 10) -> dict:
-    aweme_id = await resolve_aweme_id(url)
-    if not aweme_id:
-        return {"success": False, "message": "Could not resolve aweme id from URL or short-link path"}
+    info = await asyncio.to_thread(extract_info_browser, url)
+    if not info or not info.get("id"):
+        return {"success": False, "message": "Could not resolve aweme id from browser-render-data path"}
 
     cookies = load_cookie_dict()
     if not cookies:
         return {"success": False, "message": "No usable Douyin cookies loaded"}
 
-    info = await get_video_detail_via_api(aweme_id)
     async with DouyinAPIClient(cookies) as client:
-        data = await client.get_comments(str(aweme_id), cursor=0, count=count)
+        data = await client.get_comments(str(info["id"]), cursor=0, count=count)
 
     comments = data.get("comments") or []
     normalized = [normalize_comment(item) for item in comments if isinstance(item, dict)]
     return {
         "success": bool(normalized),
-        "aweme_id": aweme_id,
-        "title": (info or {}).get("title", ""),
+        "aweme_id": info["id"],
+        "title": info.get("title", ""),
         "count": len(normalized),
         "comments": normalized,
         "raw_has_more": data.get("has_more", False),
-        "source": "signed_api",
     }
 
 

@@ -10,12 +10,11 @@ This repo is a read-mostly Douyin skill.
 Use it for:
 
 1. metadata
-2. keyword search
-3. format inspection
-4. media download
-5. comment reading
-6. like/favorite state reading
-7. transcription
+2. format inspection
+3. media download
+4. comment reading
+5. like/favorite state reading
+6. transcription
 
 Do not treat it as a writing or publishing tool.
 
@@ -168,28 +167,6 @@ Use this when:
 
 - you want to inspect possible output formats
 - you need debugging before download
-
-### B2. Keyword search
-
-Command:
-
-```bash
-python scripts/dy_search.py "动画" --count 5
-```
-
-Expected success signs:
-
-- `success: true`
-- `items` array exists
-- each item contains:
-  - `title`
-  - `uploader`
-  - `webpage_url`
-
-Important current limitation:
-
-- keyword search may return `verify_check` even when metadata, download, and reaction-state reading still work
-- if that happens, report it honestly as a search-verification blocker, not as a fake success
 
 ### C. Download
 

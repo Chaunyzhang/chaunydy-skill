@@ -164,20 +164,3 @@ class DouyinAPIClient:
             }
         )
         return await self._request_json("/aweme/v1/web/comment/list/", params)
-
-    async def search_videos(self, keyword: str, offset: int = 0, count: int = 10) -> Dict[str, Any]:
-        params = await self._default_query()
-        params.update(
-            {
-                "keyword": keyword,
-                "offset": offset,
-                "count": count,
-                "search_channel": "aweme_video_web",
-                "sort_type": 0,
-                "publish_time": 0,
-                "filter_duration": 0,
-                "is_filter_search": 0,
-                "from_group_id": "",
-            }
-        )
-        return await self._request_json("/aweme/v1/web/general/search/single/", params)
