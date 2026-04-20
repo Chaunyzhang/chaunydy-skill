@@ -331,7 +331,7 @@ def normalize_aweme_detail(detail: dict[str, Any], *, source: str, webpage_url: 
     }
 
 
-def extract_info_browser(url: str, wait_ms: int = 8000, browser_name: str = "auto") -> dict[str, Any] | None:
+def extract_info_browser(url: str, wait_ms: int = 8000, browser_name: str = "auto", headless: bool = True) -> dict[str, Any] | None:
     ensure_directories()
     try:
         launch_plan = select_login_browser(PROFILE_ROOT, USER_DATA_DIR, requested_browser=browser_name)
@@ -342,7 +342,7 @@ def extract_info_browser(url: str, wait_ms: int = 8000, browser_name: str = "aut
         try:
             launch_kwargs = {
                 "user_data_dir": launch_plan["user_data_dir"],
-                "headless": False,
+                "headless": headless,
             }
             if launch_plan.get("playwright_channel"):
                 launch_kwargs["channel"] = launch_plan["playwright_channel"]

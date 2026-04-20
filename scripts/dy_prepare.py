@@ -4,8 +4,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any, Dict
+from urllib.parse import quote
 
 from browser_prep import select_login_browser
 from dy_comments import fetch_comments
@@ -23,6 +25,7 @@ from dy_core import (
 from dy_impl.api_client import DouyinAPIClient
 from dy_login import login_and_export_cookies
 from dy_reactions import read_reaction_state
+from playwright.sync_api import sync_playwright
 from prepare_state import default_prepare_state, set_capability, set_phase, write_prepare_state
 
 
@@ -91,6 +94,64 @@ async def probe_search_readiness(keyword: str) -> Dict[str, Any]:
     }
 
 
+def assist_search_verification(requested_browser: str, keyword: str, timeout_seconds: int = 300) -> Dict[str, Any]:
+    launch_plan = select_login_browser(PROFILE_ROOT, USER_DATA_DIR, requested_browser=requested_browser)
+    search_url = f"https://www.douyin.com/search/{quote(keyword)}?type=video"
+    print("Search verification is required. Opening the dedicated browser search page now.")
+    print("Please complete any captcha / human verification in the visible dedicated browser window.")
+    print("Do not close the window until the script tells you the search verification passed or timed out.")
+    deadline = time.time() + max(timeout_seconds, 30)
+    with sync_playwright() as p:
+        launch_kwargs = {
+            "user_data_dir": launch_plan["user_data_dir"],
+            "headless": False,
+        }
+        if launch_plan.get("playwright_channel"):
+            launch_kwargs["channel"] = launch_plan["playwright_channel"]
+        context = p.chromium.launch_persistent_context(**launch_kwargs)
+        page = context.new_page()
+        try:
+            page.goto(search_url, wait_until="domcontentloaded", timeout=120000)
+            page.wait_for_timeout(3000)
+            print(
+                json.dumps(
+                    {
+                        "success": True,
+                        "window_ready": True,
+                        "verification_type": "search_verify_check",
+                        "selected_browser": launch_plan["selected_browser"],
+                        "user_data_dir": launch_plan["user_data_dir"],
+                        "current_url": page.url,
+                        "page_title": page.title(),
+                        "human_action_required": "Complete the search verification in this dedicated browser window, then wait. The script will recheck automatically.",
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            while time.time() < deadline:
+                page.wait_for_timeout(5000)
+                probe = asyncio.run(probe_search_readiness(keyword))
+                if probe.get("success"):
+                    print("Search verification passed. You can close the browser window now.")
+                    return {
+                        "success": True,
+                        "selected_browser": launch_plan["selected_browser"],
+                        "user_data_dir": launch_plan["user_data_dir"],
+                        "verification_url": search_url,
+                        "search_probe": probe,
+                    }
+            return {
+                "success": False,
+                "selected_browser": launch_plan["selected_browser"],
+                "user_data_dir": launch_plan["user_data_dir"],
+                "verification_url": search_url,
+                "message": "Timed out waiting for search verification to pass in the dedicated browser.",
+            }
+        finally:
+            context.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare dedicated browser state and verify read-only Douyin workflow readiness.")
     parser.add_argument("--browser", default="auto", help="Preferred dedicated browser: auto, chrome, edge, chromium")
@@ -134,7 +195,7 @@ def main() -> int:
     snapshot = health_snapshot()
     state["runtime_signature"] = runtime_signature_from_snapshot(snapshot)
 
-    metadata_info = extract_info_browser(PREP_PROBE_VIDEO_URL, browser_name=args.browser)
+    metadata_info = extract_info_browser(PREP_PROBE_VIDEO_URL, browser_name=args.browser, headless=True)
     metadata_ready = bool(metadata_info and metadata_info.get("id"))
     set_phase(
         state,
@@ -183,6 +244,11 @@ def main() -> int:
     write_prepare_state(PREP_STATE, state)
 
     search_result = asyncio.run(probe_search_readiness(PREP_PROBE_SEARCH_KEYWORD))
+    if search_result.get("verify_needed"):
+        verification_result = assist_search_verification(args.browser, PREP_PROBE_SEARCH_KEYWORD, timeout_seconds=args.timeout_seconds)
+        set_phase(state, "search_verify", "ready" if verification_result.get("success") else "failed", verification_result)
+        write_prepare_state(PREP_STATE, state)
+        search_result = asyncio.run(probe_search_readiness(PREP_PROBE_SEARCH_KEYWORD))
     search_ready = bool(search_result.get("success"))
     set_phase(state, "search_probe", "ready" if search_ready else "failed", search_result)
     set_capability(

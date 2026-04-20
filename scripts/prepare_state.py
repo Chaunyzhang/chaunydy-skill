@@ -24,6 +24,7 @@ def default_prepare_state() -> Dict[str, Any]:
             "metadata_probe": {"status": "pending", "details": {}},
             "comments_probe": {"status": "pending", "details": {}},
             "reactions_probe": {"status": "pending", "details": {}},
+            "search_verify": {"status": "pending", "details": {}},
             "search_probe": {"status": "pending", "details": {}},
         },
         "capabilities": {

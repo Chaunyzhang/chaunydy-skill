@@ -144,6 +144,12 @@ This is different from `dy_doctor.py`.
 
 The output is written into a persistent prepare-state file so later agents can recover after interruptions instead of guessing.
 
+Important:
+
+- normal probes should stay headless and quiet
+- only true human-action stages should open a visible browser window
+- if search hits `verify_check`, `dy_prepare.py` should open the dedicated search page and wait for the human to finish verification before retrying the search probe
+
 ## 6. Preferred runtime path
 
 The current preferred path is:
