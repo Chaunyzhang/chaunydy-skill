@@ -15,6 +15,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 import browser_prep  # noqa: E402
 import dy_doctor  # noqa: E402
 import dy_core  # noqa: E402
+import dy_prepare  # noqa: E402
 
 
 class BrowserPreparationTest(unittest.TestCase):
@@ -75,6 +76,60 @@ class BrowserPreparationTest(unittest.TestCase):
         actions = dy_doctor.build_next_actions(snapshot, {"success": True})
         self.assertTrue(any("dy_prepare.py" in action for action in actions))
         self.assertTrue(any("ffmpeg" in action for action in actions))
+
+    def test_prepare_payload_marks_search_verify_as_human_action(self) -> None:
+        state = {
+            "selected_browser": "chrome",
+            "user_data_dir": "D:/profiles/chrome",
+            "runtime_signature": {"digest": "abc"},
+            "phases": {
+                "login_confirm": {"status": "ready", "details": {}},
+                "search_verify": {
+                    "status": "needs_human_action",
+                    "details": {
+                        "keyword": "动画",
+                        "message": "Search needs human verification in the dedicated browser.",
+                    },
+                },
+            },
+            "capabilities": {
+                "metadata": {"ready": True},
+                "download": {"ready": True},
+                "comments": {"ready": True},
+                "reactions": {"ready": True},
+                "search": {"ready": False},
+            },
+            "blockers": ["search human verification required"],
+        }
+        payload = dy_prepare.prepare_payload(state, {"needs_login": False, "all_ready": False, "prepare_state": {}})
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["status"], "needs_human_action")
+        self.assertTrue(payload["human_action_required"])
+        self.assertEqual(
+            payload["human_action"]["commands"],
+            ["python scripts/dy_search_verify.py", "python scripts/dy_prepare.py"],
+        )
+        self.assertTrue(any("dy_search_verify.py" in action for action in payload["next_actions"]))
+
+    def test_prepare_next_actions_distinguishes_search_handoff_from_failure(self) -> None:
+        actions = dy_prepare.build_next_actions_from_state(
+            {
+                "phases": {
+                    "search_verify": {
+                        "status": "needs_human_action",
+                        "details": {"keyword": "动画"},
+                    }
+                },
+                "capabilities": {
+                    "metadata": {"ready": True},
+                    "comments": {"ready": True},
+                    "reactions": {"ready": True},
+                    "search": {"ready": False},
+                },
+            }
+        )
+        self.assertEqual(actions[0], "Search needs human verification. Run: python scripts/dy_search_verify.py")
+        self.assertEqual(actions[1], "After the dedicated browser verification succeeds, rerun: python scripts/dy_prepare.py")
 
 
 if __name__ == "__main__":

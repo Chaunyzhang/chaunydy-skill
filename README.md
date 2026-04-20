@@ -61,7 +61,7 @@ python scripts/dy_prepare.py
 - probes search readiness
 - writes a persistent prepare-state file so later agents can resume from known state
 
-When search returns `verify_check`, `dy_prepare.py` now opens the dedicated browser search page and waits for the human to complete verification before rechecking search readiness.
+When search returns `verify_check`, `dy_prepare.py` does **not** open the verification browser on its own. It exits with a dedicated `needs_human_action` state and tells you to run the separate search-verification step.
 
 Important:
 
@@ -74,6 +74,9 @@ Important:
 python scripts/dy_search_verify.py
 python scripts/dy_prepare.py
 ```
+
+- `dy_prepare.py` now distinguishes a real preparation failure from a recoverable `needs_human_action` search-verification handoff
+- if you see `human_action_required: true`, the next command is `python scripts/dy_search_verify.py`
 
 ## Install
 

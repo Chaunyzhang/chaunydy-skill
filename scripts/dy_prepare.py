@@ -27,11 +27,50 @@ from dy_reactions import read_reaction_state
 from prepare_state import default_prepare_state, set_capability, set_phase, write_prepare_state
 
 
+EXIT_READY = 0
+EXIT_FAILED = 1
+EXIT_NEEDS_HUMAN_ACTION = 2
+
+
+def search_human_handoff(state: Dict[str, Any]) -> Dict[str, Any] | None:
+    search_verify = (state.get("phases", {}).get("search_verify") or {})
+    if search_verify.get("status") != "needs_human_action":
+        return None
+    details = search_verify.get("details") or {}
+    keyword = details.get("keyword") or PREP_PROBE_SEARCH_KEYWORD
+    return {
+        "type": "search_verify_check",
+        "keyword": keyword,
+        "commands": [
+            "python scripts/dy_search_verify.py",
+            "python scripts/dy_prepare.py",
+        ],
+        "message": details.get("message")
+        or "Search needs human verification in the dedicated browser before prepare can finish.",
+    }
+
+
+def prepare_status(state: Dict[str, Any]) -> str:
+    if search_human_handoff(state):
+        return "needs_human_action"
+    if state.get("blockers"):
+        return "failed"
+    capabilities = state.get("capabilities", {})
+    if all(bool((capabilities.get(name) or {}).get("ready")) for name in ["metadata", "comments", "reactions", "search"]):
+        return "ready"
+    return "failed"
+
+
 def prepare_payload(state: Dict[str, Any], snapshot: Dict[str, Any]) -> Dict[str, Any]:
     capabilities = state.get("capabilities", {})
     blockers = state.get("blockers", [])
+    handoff = search_human_handoff(state)
+    status = prepare_status(state)
     payload = {
-        "success": not blockers and all(bool((capabilities.get(name) or {}).get("ready")) for name in ["metadata", "comments", "reactions"]),
+        "success": status == "ready",
+        "status": status,
+        "human_action_required": bool(handoff),
+        "human_action": handoff,
         "state_file": str(PREP_STATE),
         "selected_browser": state.get("selected_browser"),
         "user_data_dir": state.get("user_data_dir"),
@@ -60,8 +99,12 @@ def build_next_actions_from_state(state: Dict[str, Any]) -> list[str]:
         actions.append("Comments are not ready. Rerun prepare or inspect the comments_probe failure details.")
     if not (caps.get("reactions") or {}).get("ready"):
         actions.append("Reactions are not ready. Rerun prepare or inspect the reactions_probe failure details.")
-    if not (caps.get("search") or {}).get("ready"):
-        actions.append("Search is not ready yet. If the probe says verify_check, complete human verification in the dedicated browser and rerun prepare.")
+    search_handoff = search_human_handoff(state)
+    if search_handoff:
+        actions.append(f"Search needs human verification. Run: {search_handoff['commands'][0]}")
+        actions.append(f"After the dedicated browser verification succeeds, rerun: {search_handoff['commands'][1]}")
+    elif not (caps.get("search") or {}).get("ready"):
+        actions.append("Search is not ready yet. Rerun prepare or inspect the search_probe failure details.")
     if not actions:
         actions.append("Preparation passed. You can continue with dy_info.py, dy_download.py, dy_comments.py, and dy_reactions.py.")
     return actions
@@ -218,6 +261,10 @@ def main() -> int:
                 "success": False,
                 "verification_type": "search_verify_check",
                 "keyword": PREP_PROBE_SEARCH_KEYWORD,
+                "commands": [
+                    "python scripts/dy_search_verify.py",
+                    "python scripts/dy_prepare.py",
+                ],
                 "message": "Search needs human verification in the dedicated browser. Run python scripts/dy_search_verify.py and then rerun python scripts/dy_prepare.py.",
             },
         )
@@ -232,14 +279,18 @@ def main() -> int:
     if not reactions_ready:
         blockers.append("reactions readiness failed")
     if not search_ready:
-        blockers.append("search readiness failed")
+        blockers.append("search human verification required" if search_result.get("verify_needed") else "search readiness failed")
     state["blockers"] = blockers
     write_prepare_state(PREP_STATE, state)
 
     final_snapshot = health_snapshot()
     payload = prepare_payload(state, final_snapshot)
     print(json.dumps(payload, ensure_ascii=False, indent=2))
-    return 0 if payload.get("success") else 1
+    if payload.get("success"):
+        return EXIT_READY
+    if payload.get("human_action_required"):
+        return EXIT_NEEDS_HUMAN_ACTION
+    return EXIT_FAILED
 
 
 if __name__ == "__main__":

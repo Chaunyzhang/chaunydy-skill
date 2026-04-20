@@ -158,6 +158,7 @@ python scripts/dy_prepare.py
 ```
 
 - keep the long-lived visible browser window in `dy_search_verify.py`, not inside the main prepare pass
+- treat this as `needs_human_action`, not as a generic hard failure
 
 ## 6. Preferred runtime path
 

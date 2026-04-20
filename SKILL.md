@@ -29,6 +29,16 @@ Then run the actual preparation stage:
 python scripts/dy_prepare.py
 ```
 
+If `dy_prepare.py` reports `human_action_required: true` for search, do not treat that as a generic crash.
+Run:
+
+```bash
+python scripts/dy_search_verify.py
+python scripts/dy_prepare.py
+```
+
+Only continue with metadata/download/comments/reactions after prepare returns ready.
+
 If Douyin requires fresh cookies, run:
 
 ```bash
