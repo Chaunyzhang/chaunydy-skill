@@ -94,6 +94,20 @@ async def probe_search_readiness(keyword: str) -> Dict[str, Any]:
     }
 
 
+def page_needs_search_verification(page: Any) -> Dict[str, Any]:
+    try:
+        title = page.title()
+    except Exception:
+        title = ""
+    current_url = getattr(page, "url", "")
+    verification_active = ("验证码" in title) or ("verify" in current_url.lower())
+    return {
+        "verification_active": verification_active,
+        "current_url": current_url,
+        "page_title": title,
+    }
+
+
 def assist_search_verification(requested_browser: str, keyword: str, timeout_seconds: int = 300) -> Dict[str, Any]:
     launch_plan = select_login_browser(PROFILE_ROOT, USER_DATA_DIR, requested_browser=requested_browser)
     search_url = f"https://www.douyin.com/search/{quote(keyword)}?type=video"
@@ -129,17 +143,22 @@ def assist_search_verification(requested_browser: str, keyword: str, timeout_sec
                     indent=2,
                 )
             )
+            stable_non_verify_checks = 0
             while time.time() < deadline:
                 page.wait_for_timeout(5000)
-                probe = asyncio.run(probe_search_readiness(keyword))
-                if probe.get("success"):
-                    print("Search verification passed. You can close the browser window now.")
+                page_state = page_needs_search_verification(page)
+                if not page_state["verification_active"]:
+                    stable_non_verify_checks += 1
+                else:
+                    stable_non_verify_checks = 0
+                if stable_non_verify_checks >= 2:
+                    print("Search verification page no longer looks blocked. Rechecking search readiness now.")
                     return {
                         "success": True,
                         "selected_browser": launch_plan["selected_browser"],
                         "user_data_dir": launch_plan["user_data_dir"],
                         "verification_url": search_url,
-                        "search_probe": probe,
+                        "page_state": page_state,
                     }
             return {
                 "success": False,
