@@ -84,9 +84,12 @@ python scripts/dy_login.py
 
 What this does:
 
-1. opens a dedicated browser session
-2. waits for the user to log in
-3. exports:
+1. scans dedicated browser candidates first
+2. selects a dedicated browser + profile for the skill
+3. prints the selected browser environment
+4. opens a dedicated browser session
+5. waits for the user to log in
+6. exports:
    - `~/.local/share/chaunydy-skill/cookies.json`
    - `~/.local/share/chaunydy-skill/cookies.txt`
 
@@ -94,6 +97,8 @@ Important:
 
 - If user interaction is needed, stop and wait
 - Do not continue until the user confirms login is complete
+- Do not assume the login window is visible just because the script says it is preparing one
+- Treat `window_ready: true` plus human confirmation as the real signal
 - Do not switch to another browser path on your own
 
 ## 6. Preferred runtime path

@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+from browser_prep import select_login_browser
+from dy_core import PROFILE_ROOT, looks_logged_in
 from dy_utils import is_valid_cookie_name
 
 
@@ -48,56 +50,103 @@ def to_netscape(cookies: list[dict]) -> str:
         value = str(cookie.get("value", "") or "")
         lines.append("\t".join([domain, include_subdomains, path, secure, expires, name, value]))
     return "\n".join(lines) + "\n"
-
-
-def looks_logged_in(cookies: list[dict]) -> bool:
-    names = {cookie.get("name", "") for cookie in cookies}
-    required = {"passport_csrf_token", "passport_csrf_token_default", "ttwid"}
-    if not required.issubset(names):
-        return False
-    # One of these usually indicates an authenticated or at least usable session state.
-    return any(name in names for name in ["odin_tt", "sid_guard", "sessionid_ss", "uid_tt", "sid_tt"])
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Open Douyin in a browser and export cookies after login.")
     parser.add_argument("--timeout-seconds", type=int, default=300)
+    parser.add_argument("--browser", default="auto", help="Preferred dedicated browser: auto, chrome, edge, chromium")
     args = parser.parse_args()
 
     ensure_dirs()
 
-    print("Opening a persistent browser for Douyin login.")
-    print("Please log in manually in the opened browser window.")
+    try:
+        launch_plan = select_login_browser(PROFILE_ROOT, USER_DATA_DIR, requested_browser=args.browser)
+    except Exception as exc:
+        print(json.dumps({"success": False, "message": str(exc)}, ensure_ascii=False, indent=2))
+        return 1
+
+    print("Preparing dedicated browser environment for Douyin login.")
+    print(
+        json.dumps(
+            {
+                "requested_browser": launch_plan["requested_browser"],
+                "selected_browser": launch_plan["selected_browser"],
+                "playwright_channel": launch_plan["playwright_channel"],
+                "system_executable": launch_plan["system_executable"],
+                "user_data_dir": launch_plan["user_data_dir"],
+                "browser_scan": launch_plan["browser_scan"],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    print("Attempting to open the dedicated Douyin login window now.")
+    print("Do not continue unless you personally see a browser window on your desktop.")
     print(f"I will keep checking cookies for up to {args.timeout_seconds} seconds.")
 
     deadline = time.time() + max(args.timeout_seconds, 30)
-    with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=str(USER_DATA_DIR),
-            headless=False,
-        )
-        page = context.new_page()
-        page.goto("https://www.douyin.com/", wait_until="domcontentloaded", timeout=120000)
+    try:
+        with sync_playwright() as p:
+            launch_kwargs = {
+                "user_data_dir": launch_plan["user_data_dir"],
+                "headless": False,
+            }
+            if launch_plan.get("playwright_channel"):
+                launch_kwargs["channel"] = launch_plan["playwright_channel"]
+            context = p.chromium.launch_persistent_context(**launch_kwargs)
+            page = context.new_page()
+            page.goto("https://www.douyin.com/", wait_until="domcontentloaded", timeout=120000)
+            page.wait_for_timeout(3000)
+            print(
+                json.dumps(
+                    {
+                        "success": True,
+                        "window_ready": True,
+                        "selected_browser": launch_plan["selected_browser"],
+                        "user_data_dir": launch_plan["user_data_dir"],
+                        "current_url": page.url,
+                        "page_title": page.title(),
+                        "human_action_required": "Please log in in the visible Douyin window. If no window is visible, stop and report that explicitly.",
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
 
-        exported = False
-        while time.time() < deadline:
-            page.wait_for_timeout(5000)
-            cookies = context.cookies()
-            if looks_logged_in(cookies):
-                COOKIE_JSON.write_text(json.dumps(cookies, ensure_ascii=False, indent=2), encoding="utf-8")
-                COOKIE_TXT.write_text(to_netscape(cookies), encoding="utf-8")
-                print(f"Exported cookies to:\n- {COOKIE_JSON}\n- {COOKIE_TXT}")
-                exported = True
-                break
+            exported = False
+            while time.time() < deadline:
+                page.wait_for_timeout(5000)
+                cookies = context.cookies()
+                if looks_logged_in(cookies):
+                    COOKIE_JSON.write_text(json.dumps(cookies, ensure_ascii=False, indent=2), encoding="utf-8")
+                    COOKIE_TXT.write_text(to_netscape(cookies), encoding="utf-8")
+                    print(f"Exported cookies to:\n- {COOKIE_JSON}\n- {COOKIE_TXT}")
+                    exported = True
+                    break
 
-        if not exported:
-            print("Timed out before a stable Douyin cookie set was observed.")
+            if not exported:
+                print("Timed out before a stable Douyin cookie set was observed.")
+                context.close()
+                return 1
+
+            print("You can close the browser window now.")
             context.close()
-            return 1
-
-        print("You can close the browser window now.")
-        context.close()
-        return 0
+            return 0
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "success": False,
+                    "window_ready": False,
+                    "selected_browser": launch_plan["selected_browser"],
+                    "user_data_dir": launch_plan["user_data_dir"],
+                    "message": str(exc),
+                    "human_action_required": "If no browser window appeared, stop here and report that the login window never became visible.",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 1
 
 
 if __name__ == "__main__":

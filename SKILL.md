@@ -23,7 +23,15 @@ If Douyin requires fresh cookies, run:
 python scripts/dy_login.py
 ```
 
-If user interaction is required, stop and wait for the user to finish login in the opened dedicated Douyin window.
+`dy_login.py` now has an explicit preparation stage before login:
+
+1. scan dedicated browser candidates
+2. choose a browser/profile
+3. print the chosen environment
+4. open the visible Douyin login window
+
+Only continue after the user says they **personally saw the window**.
+Do not treat “browser prepared” as proof that a visible window actually appeared.
 
 ## Workflow A: metadata
 

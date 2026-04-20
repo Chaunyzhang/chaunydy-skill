@@ -47,7 +47,19 @@ ffmpeg
 python scripts/dy_login.py
 ```
 
-This opens the dedicated Douyin login session and exports both `cookies.json` and `cookies.txt` after you log in.
+This now performs a preparation phase before opening the login page:
+
+1. scan usable dedicated browsers (`chrome`, `edge`, `chromium`)
+2. pick a dedicated browser/profile for the skill
+3. print the selected browser, executable, and profile directory
+4. only then open the visible Douyin login window
+5. export both `cookies.json` and `cookies.txt` after you log in
+
+Important:
+
+- do **not** trust a generic “prepared login window” message by itself
+- trust the JSON block that says `window_ready: true`
+- if you do not personally see a browser window on your desktop, stop and report that explicitly
 
 ### Metadata
 

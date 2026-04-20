@@ -12,6 +12,7 @@ from urllib.parse import unquote
 import requests
 from playwright.sync_api import sync_playwright
 from yt_dlp import YoutubeDL
+from browser_prep import scan_browser_environment
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -27,13 +28,16 @@ from dy_impl.url_parser import URLParser
 from dy_utils import parse_url_type, validate_url
 DATA_DIR = Path.home() / ".local" / "share" / "chaunydy-skill"
 OUTPUT_DIR = ROOT / "out"
+PROFILE_ROOT = DATA_DIR / "browser-profiles"
 USER_DATA_DIR = DATA_DIR / "browser-profile"
+COOKIE_JSON = DATA_DIR / "cookies.json"
+COOKIE_TXT = DATA_DIR / "cookies.txt"
 COOKIE_FILE_CANDIDATES = [
-    DATA_DIR / "cookies.txt",
+    COOKIE_TXT,
     ROOT / "cookies.txt",
 ]
 BROWSER_JSON_COOKIE_CANDIDATES = [
-    DATA_DIR / "cookies.json",
+    COOKIE_JSON,
     ROOT / "cookies.json",
 ]
 BROWSER_CANDIDATES = ["chrome", "edge", "brave", "firefox"]
@@ -43,6 +47,7 @@ def ensure_directories() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    PROFILE_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 def preferred_cookie_file() -> str | None:
@@ -117,6 +122,28 @@ def load_cookie_list() -> list[dict[str, Any]]:
             pass
         cookies.append(cookie)
     return cookies
+
+
+def looks_logged_in(cookies: list[dict[str, Any]]) -> bool:
+    names = {str(cookie.get("name", "") or "").strip() for cookie in cookies}
+    required = {"passport_csrf_token", "passport_csrf_token_default", "ttwid"}
+    if not required.issubset(names):
+        return False
+    return any(name in names for name in ["odin_tt", "sid_guard", "sessionid_ss", "uid_tt", "sid_tt"])
+
+
+def cookie_health_snapshot() -> dict[str, Any]:
+    cookies = load_cookie_list()
+    cookie_names = sorted(str(cookie.get("name", "") or "").strip() for cookie in cookies if cookie.get("name"))
+    return {
+        "cookie_json": str(COOKIE_JSON),
+        "cookie_txt": str(COOKIE_TXT),
+        "cookie_json_exists": COOKIE_JSON.is_file(),
+        "cookie_txt_exists": COOKIE_TXT.is_file(),
+        "cookie_count": len(cookies),
+        "looks_logged_in": looks_logged_in(cookies),
+        "cookie_name_preview": cookie_names[:12],
+    }
 
 
 async def extract_info_api(url: str) -> dict[str, Any] | None:
@@ -481,13 +508,28 @@ def download_media(
 def health_snapshot() -> dict[str, Any]:
     ensure_directories()
     browser_cookie_source = pick_browser_cookie_source()
+    browser_scan = scan_browser_environment(PROFILE_ROOT, USER_DATA_DIR)
+    cookie_state = cookie_health_snapshot()
+    preferred_browser = browser_scan.get("preferred_browser") or {}
+    all_ready = bool(cookie_state["looks_logged_in"] and preferred_browser.get("name"))
     return {
         "data_dir": str(DATA_DIR),
         "output_dir": str(OUTPUT_DIR),
         "yt_dlp_ready": True,
         "ffmpeg_present": bool(shutil.which("ffmpeg")),
+        "preferred_login_browser": preferred_browser.get("name"),
+        "preferred_login_profile_dir": preferred_browser.get("dedicated_profile_dir"),
+        "dedicated_browser_scan": browser_scan.get("browsers", []),
+        "cookies": cookie_state,
         "cookie_file": preferred_cookie_file(),
         "browser_cookie_source": browser_cookie_source,
-        "read_only_ready": True,
+        "read_only_ready": bool(preferred_browser.get("name")),
         "write_actions_default": "disabled",
+        "needs_login": not cookie_state["looks_logged_in"],
+        "login_hint": (
+            "Run python scripts/dy_login.py and only continue after you personally see the dedicated Douyin login window."
+            if not cookie_state["looks_logged_in"]
+            else ""
+        ),
+        "all_ready": all_ready,
     }
