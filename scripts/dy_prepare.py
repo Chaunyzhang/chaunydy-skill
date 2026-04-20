@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
+from browser_prep import select_login_browser
 from dy_comments import fetch_comments
 from dy_core import (
     PREP_PROBE_SEARCH_KEYWORD,
