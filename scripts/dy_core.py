@@ -13,7 +13,7 @@ from urllib.parse import unquote
 import requests
 from playwright.sync_api import sync_playwright
 from yt_dlp import YoutubeDL
-from browser_prep import probe_playwright_browser, scan_browser_environment, select_login_browser
+from browser_prep import launch_persistent_context_with_retry, probe_playwright_browser, scan_browser_environment, select_login_browser
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -349,13 +349,7 @@ def extract_info_browser(url: str, wait_ms: int = 8000, browser_name: str = "aut
     with sync_playwright() as p:
         context = None
         try:
-            launch_kwargs = {
-                "user_data_dir": launch_plan["user_data_dir"],
-                "headless": headless,
-            }
-            if launch_plan.get("playwright_channel"):
-                launch_kwargs["channel"] = launch_plan["playwright_channel"]
-            context = p.chromium.launch_persistent_context(**launch_kwargs)
+            context = launch_persistent_context_with_retry(p, selected_browser=launch_plan, headless=headless)
             page = context.new_page()
             detail_payload: dict[str, Any] | None = None
 

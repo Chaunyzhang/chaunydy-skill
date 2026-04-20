@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
-from browser_prep import select_login_browser
+from browser_prep import launch_persistent_context_with_retry, select_login_browser
 from dy_core import PROFILE_ROOT, looks_logged_in
 from dy_utils import is_valid_cookie_name
 
@@ -87,13 +87,7 @@ def login_and_export_cookies(requested_browser: str = "auto", timeout_seconds: i
     deadline = time.time() + max(timeout_seconds, 30)
     try:
         with sync_playwright() as p:
-            launch_kwargs = {
-                "user_data_dir": launch_plan["user_data_dir"],
-                "headless": False,
-            }
-            if launch_plan.get("playwright_channel"):
-                launch_kwargs["channel"] = launch_plan["playwright_channel"]
-            context = p.chromium.launch_persistent_context(**launch_kwargs)
+            context = launch_persistent_context_with_retry(p, selected_browser=launch_plan, headless=False)
             page = context.new_page()
             page.goto("https://www.douyin.com/", wait_until="domcontentloaded", timeout=120000)
             page.wait_for_timeout(3000)

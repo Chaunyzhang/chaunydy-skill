@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -144,15 +145,8 @@ def probe_playwright_browser(
 ) -> Dict[str, Any]:
     from playwright.sync_api import sync_playwright
 
-    launch_kwargs: Dict[str, Any] = {
-        "user_data_dir": selected_browser["user_data_dir"],
-        "headless": headless,
-    }
-    if selected_browser.get("playwright_channel"):
-        launch_kwargs["channel"] = selected_browser["playwright_channel"]
-
     with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(**launch_kwargs)
+        context = launch_persistent_context_with_retry(p, selected_browser=selected_browser, headless=headless)
         page = context.new_page()
         try:
             page.goto(target_url, wait_until="domcontentloaded", timeout=120000)
@@ -168,3 +162,36 @@ def probe_playwright_browser(
             }
         finally:
             context.close()
+
+
+def build_launch_kwargs(selected_browser: Dict[str, Any], *, headless: bool) -> Dict[str, Any]:
+    launch_kwargs: Dict[str, Any] = {
+        "user_data_dir": selected_browser["user_data_dir"],
+        "headless": headless,
+    }
+    if selected_browser.get("playwright_channel"):
+        launch_kwargs["channel"] = selected_browser["playwright_channel"]
+    return launch_kwargs
+
+
+def launch_persistent_context_with_retry(
+    playwright: Any,
+    *,
+    selected_browser: Dict[str, Any],
+    headless: bool,
+    max_attempts: int = 3,
+    retry_delay_seconds: float = 1.0,
+) -> Any:
+    last_exc: Optional[Exception] = None
+    launch_kwargs = build_launch_kwargs(selected_browser, headless=headless)
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return playwright.chromium.launch_persistent_context(**launch_kwargs)
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt >= max_attempts:
+                break
+            time.sleep(retry_delay_seconds)
+    raise RuntimeError(
+        f"Failed to launch dedicated {selected_browser['selected_browser']} persistent context after {max_attempts} attempts: {last_exc}"
+    ) from last_exc
